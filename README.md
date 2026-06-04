@@ -2,8 +2,18 @@
 
 ![](img/banner.PNG)
 
+[![build](https://github.com/poppopjmp/offensivepipeline/actions/workflows/build.yml/badge.svg)](https://github.com/poppopjmp/offensivepipeline/actions/workflows/build.yml)
+[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Maintained](https://img.shields.io/badge/maintained-yes-brightgreen.svg)](https://github.com/poppopjmp/offensivepipeline/commits/main)
+
 **OffensivePipeline** allows you to download and build C# tools, applying certain modifications in order to improve their evasion for Red Team exercises.   
 A common use of OffensivePipeline is to download a tool from a Git repository, randomise certain values in the project, build it, obfuscate the resulting binary and generate a shellcode.
+
+> **Project status:** actively maintained again. The codebase now targets **.NET 8 (LTS)**,
+> all dependencies have been updated, and CI builds run on every push. Maintained by
+> [@poppopjmp](https://github.com/poppopjmp) (van1sh), continuing the original work of
+> [@aetsu](https://github.com/aetsu). See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## Features
 
@@ -18,6 +28,14 @@ A common use of OffensivePipeline is to download a tool from a Git repository, r
 - There are 79 tools parameterised in YML templates (not all of them may work :D)
 - New tools can be added using YML templates
 - It should be easy to add new plugins...
+
+## What's new in version 2.1
+
+- Migrated from the end-of-life **.NET 6** to **.NET 8 (LTS)**
+- All NuGet dependencies updated to current versions (LibGit2Sharp, Microsoft.Build, YamlDotNet, ...)
+- Bundled `DonutCore` now resolves automatically via `nuget.config` — no manual NuGet feed setup
+- GitHub Actions CI/release pipelines, Dependabot, and community health files added
+- Obsolete `WebClient` download path replaced with `HttpClient`
 
 ## What's new in version 2.0
 
@@ -283,10 +301,30 @@ In the **OffensivePipeline.dll.config** file it's possible to change the version
 
 ## Requirements for build
 
-- Net framework 3.5.1 (for some tools): https://www.microsoft.com/en-us/download/details.aspx?id=22
-- Visual Studio 2022 -> https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=17
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Net framework 3.5.1 (for some target tools): https://www.microsoft.com/en-us/download/details.aspx?id=22
+- (Optional) Visual Studio 2022 -> https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=17
     - Install .NET desktop build tools
-- Add the Donut nugget manually. (Thanks to @n1xbyte for the nugget (*DonutCore.1.0.1.nupkg*))
+
+The bundled Donut NuGet package (`DonutCore.1.0.1.nupkg`, thanks to @n1xbyte) is now
+resolved automatically from `ExternalResources/` via the repository's `nuget.config` —
+no manual NuGet feed configuration is required.
+
+Build from the command line:
+
+```bash
+dotnet build OffensivePipeline.sln -c Release
+```
+
+> Note: building/obfuscating the downloaded tools is performed on **Windows** (the
+> pipeline shells out to `cmd.exe`, MSBuild Build Tools and the ConfuserEx CLI).
+
+## Maintainers
+
+- Original author: [@aetsu](https://github.com/aetsu)
+- Current maintainer: [@poppopjmp](https://github.com/poppopjmp) (van1sh)
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 
