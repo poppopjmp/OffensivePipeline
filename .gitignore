@@ -1,9 +1,18 @@
+# .NET build artifacts
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+*.user
+*.suo
+*.userprefs
+
 # Node artifact files
 node_modules/
 dist/
 
 # Visual studio
 *.vs
+.vs/
 
 
 # Compiled Java class files

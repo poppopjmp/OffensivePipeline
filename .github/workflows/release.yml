@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish (win-x64)
+        run: dotnet publish OffensivePipeline/OffensivePipeline.csproj -c Release -r win-x64 --self-contained false -o publish
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "dev" }
+          Compress-Archive -Path publish/* -DestinationPath "OffensivePipeline-$name-win-x64.zip" -Force
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: OffensivePipeline-*-win-x64.zip
+          generate_release_notes: true

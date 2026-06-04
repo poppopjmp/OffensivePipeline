@@ -1,0 +1,41 @@
+name: Bug report
+description: Report a problem with OffensivePipeline
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including the command you ran.
+      placeholder: OffensivePipeline.exe t rubeus ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste the relevant section of log.txt or console output.
+      render: shell
+  - type: input
+    id: tool
+    attributes:
+      label: Affected tool / YAML template
+      placeholder: e.g. Rubeus.yml
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: e.g. Windows 11 23H2
+    validations:
+      required: true
+  - type: input
+    id: dotnet
+    attributes:
+      label: .NET SDK version
+      placeholder: "8.0.x"
