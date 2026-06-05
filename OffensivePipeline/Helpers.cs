@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO.Compression;
 using System.Linq;
-using System.Net.Http;
+using System.Net;
 using System.Security.Cryptography;
+using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -12,8 +14,6 @@ namespace OffensivePipeline
 {
     internal class Helpers
     {
-        private static readonly HttpClient httpClient = new HttpClient();
-
         public static string GetRandomString()
         {
             string path = Path.GetRandomFileName();
@@ -24,15 +24,11 @@ namespace OffensivePipeline
         public static bool DownloadResources(string url, string outputName, string outputPath)
         {
             bool status = true;
+            WebClient client = new WebClient();
             try
             {
                 string f = Path.Combine(Directory.GetCurrentDirectory(), outputPath, outputName);
-                using (var response = httpClient.GetAsync(url).GetAwaiter().GetResult())
-                {
-                    response.EnsureSuccessStatusCode();
-                    using var fs = new FileStream(f, FileMode.Create, FileAccess.Write, FileShare.None);
-                    response.Content.CopyToAsync(fs).GetAwaiter().GetResult();
-                }
+                client.DownloadFile(url, f);
                 if (!File.Exists(f))
                 {
                     LogHelpers.PrintError($"DownloadResources: File not found <{f}>");

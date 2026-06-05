@@ -83,7 +83,7 @@ namespace OffensivePipeline
                         if (tool.authToken != "")
                         {
                             string gitUser = tool.authUser, gitToken = tool.authToken;
-                            co.FetchOptions.CredentialsProvider = (_url, _user, _cred) => new UsernamePasswordCredentials { Username = gitUser, Password = gitToken };
+                            co.CredentialsProvider = (_url, _user, _cred) => new UsernamePasswordCredentials { Username = gitUser, Password = gitToken };
                         }
                         co.RecurseSubmodules = true;
                         _ = Repository.Clone(tool.gitLink, toolPath, co);
