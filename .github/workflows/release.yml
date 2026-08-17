@@ -4,34 +4,121 @@ on:
   push:
     tags: [ 'v*' ]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build the release from (for example v3.0.0)'
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+# Never cancel a half-published release.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   release:
     runs-on: windows-latest
 
+    permissions:
+      contents: write        # create the release and upload its assets
+      id-token: write        # mint the OIDC token the provenance attestation is signed with
+      attestations: write    # record the attestation
+
     steps:
+      # A dispatched run has to name an existing tag: without this the run would take whatever
+      # ref it was dispatched from and try to publish a release called "main".
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '8.0.x'
+          global-json-file: global.json
 
-      - name: Publish (win-x64)
-        run: dotnet publish OffensivePipeline/OffensivePipeline.csproj -c Release -r win-x64 --self-contained false -o publish
+      - name: Restore
+        run: dotnet restore OffensivePipeline.sln
+
+      - name: Build
+        run: dotnet build OffensivePipeline.sln -c Release --no-restore
+
+      # A tag must never ship a binary that has not passed the test suite.
+      - name: Test
+        run: dotnet test --solution OffensivePipeline.sln -c Release --no-build
+
+      - name: Publish (win-x64, framework-dependent)
+        run: >
+          dotnet publish OffensivePipeline/OffensivePipeline.csproj -c Release
+          -r win-x64 --self-contained false -o publish/framework-dependent
+
+      # For locked-down or air-gapped engagement hosts with no .NET 10 runtime installed.
+      # No single-file, no trimming and no AOT: the tool resolves Tools/, Resources/ and
+      # appsettings.json from disk and uses reflection-based YAML and P/Invoke.
+      - name: Publish (win-x64, self-contained)
+        run: >
+          dotnet publish OffensivePipeline/OffensivePipeline.csproj -c Release
+          -r win-x64 --self-contained true -o publish/self-contained
+
+      - name: Verify published payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(find OffensivePipeline/Tools -name '*.yml' | wc -l | tr -d '[:space:]')
+          for dir in publish/framework-dependent publish/self-contained; do
+            published=$(find "$dir/Tools" -name '*.yml' | wc -l | tr -d '[:space:]')
+            echo "$dir: $published of $expected templates"
+            test "$published" -eq "$expected"
+            test -f "$dir/Resources/template_build.bat"
+            test -f "$dir/Resources/template_confuserEx.crproj.template"
+            test -f "$dir/appsettings.json"
+            test -f "$dir/LICENSE"
+            test -f "$dir/README.md"
+          done
 
       - name: Package
         shell: pwsh
         run: |
-          $name = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "dev" }
-          Compress-Archive -Path publish/* -DestinationPath "OffensivePipeline-$name-win-x64.zip" -Force
+          $tag = $env:RELEASE_TAG
+          Compress-Archive -Path publish/framework-dependent/* -DestinationPath "OffensivePipeline-$tag-win-x64.zip" -Force
+          Compress-Archive -Path publish/self-contained/*      -DestinationPath "OffensivePipeline-$tag-win-x64-self-contained.zip" -Force
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Filter 'OffensivePipeline-*.zip' |
+            Sort-Object Name |
+            ForEach-Object { '{0}  {1}' -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name } |
+            Set-Content -Path SHA256SUMS.txt -Encoding ascii
+          Get-Content SHA256SUMS.txt
+
+      # Lets an operator prove a downloaded zip was produced by this workflow from this tag:
+      #   gh attestation verify <zip> --repo poppopjmp/offensivepipeline
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          files: OffensivePipeline-*-win-x64.zip
-          generate_release_notes: true
+          subject-path: 'OffensivePipeline-*.zip'
+
+      # The GitHub CLI is preinstalled on the runner and authenticates with the job's own token,
+      # which keeps a third-party action out of the only job that holds contents: write.
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:RELEASE_TAG" `
+            "OffensivePipeline-$env:RELEASE_TAG-win-x64.zip" `
+            "OffensivePipeline-$env:RELEASE_TAG-win-x64-self-contained.zip" `
+            SHA256SUMS.txt `
+            --title "$env:RELEASE_TAG" `
+            --generate-notes

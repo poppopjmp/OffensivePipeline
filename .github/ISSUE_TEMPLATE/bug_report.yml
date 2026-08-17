@@ -37,5 +37,13 @@ body:
   - type: input
     id: dotnet
     attributes:
-      label: .NET SDK version
-      placeholder: "8.0.x"
+      label: .NET runtime / SDK version
+      description: Output of `dotnet --info`, or the runtime version if you are using a release zip.
+      placeholder: "10.0.x"
+  - type: checkboxes
+    id: authorised-use
+    attributes:
+      label: Authorised use
+      options:
+        - label: I confirm this report relates to authorised security testing, research, or training.
+          required: true
