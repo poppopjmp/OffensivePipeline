@@ -1,153 +1,155 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
-using Microsoft.Build.Construction;
-using System.Configuration;
+using Microsoft.Extensions.Logging;
+using OffensivePipeline.Config;
+using OffensivePipeline.Diagnostics;
+using OffensivePipeline.Infrastructure;
+using OffensivePipeline.Ui;
 
-namespace OffensivePipeline.Modules
+namespace OffensivePipeline.Modules;
+
+internal sealed class BuildCsharp(
+    IConsoleUi ui,
+    ILogger<BuildCsharp> logger,
+    PipelinePaths paths,
+    PipelineOptions options,
+    IProcessRunner processRunner,
+    IResourceDownloader downloader) : IModule
 {
-    public class BuildCsharp : iModule
+    public string Name => "BuildCsharp";
+
+    public ModuleResult CheckStart(ModuleContext context)
     {
-        private string buildOptions = ConfigurationManager.AppSettings["BuildCsharpOptions"];
-        public string Name => "BuildCsharp";
-        public ToolConfig _tool { get; set; }
-        public ModuleOutput _moduleOutput { get; set; }
+        ArgumentNullException.ThrowIfNull(context);
 
+        string message;
+        bool status = true;
+        ui.Phase("\t[+] Checking requirements...");
 
-        public BuildCsharp(ToolConfig tool, ModuleOutput moduleOutput)
+        if (!File.Exists(paths.NugetPath))
         {
-            _tool = tool;
-            _moduleOutput = moduleOutput;
-        }
+            message = $"\t[*] Downloading nuget.exe from {options.NugetUrl}";
+            ui.Heading(message);
+            logger.Info(message.Trim());
 
-        ModuleOutput iModule.CheckStart()
-        {
-            string message;
-            LogHelpers.PrintBlue("\t[+] Checking requirements...");
-            if (!File.Exists(Conf.nugetPath))
-            {
-                message = $"\t[*] Downloading nuget.exe from {ConfigurationManager.AppSettings["NugetUrl"]}";
-                LogHelpers.PrintYellow(message);
-                LogHelpers.LogToFile($"{Name} - CheckStart", "INFO", message);
-                //Download nuget.exe
-                _moduleOutput.Status = Helpers.DownloadResources(ConfigurationManager.AppSettings["NugetUrl"], "nuget.exe", Conf.resourcesPath);
-                if (_moduleOutput.Status)
-                {
-                    message = "\t\t[+] Download OK - nuget.exe";
-                    LogHelpers.PrintOk(message);
-                    LogHelpers.LogToFile($"{Name} - CheckStart", "INFO", message);
-                }
-                else
-                {
-                    message = "\t\t[+] Download ERROR - nuget.exe";
-                    LogHelpers.PrintError(message);
-                    LogHelpers.LogToFile($"{Name} - CheckStart", "ERROR", message);
-                    _moduleOutput.Status = false;
-                    return _moduleOutput;
-                }
-            }
-            else
+            status = downloader.Download(
+                options.NugetUrl, "nuget.exe", paths.ResourcesPath, options.NugetSha256);
+
+            if (status)
             {
                 message = "\t\t[+] Download OK - nuget.exe";
-                LogHelpers.PrintOk(message);
-                LogHelpers.LogToFile($"{Name} - CheckStart", "INFO", message);
-            }
-            if (!File.Exists(ConfigurationManager.AppSettings["BuildCSharpTools"]))
-            {
-                message = $"\t\t[-] File not found: {ConfigurationManager.AppSettings["BuildCSharpTools"]}";
-                LogHelpers.PrintError(message);
-                LogHelpers.LogToFile($"{Name} - CheckStart", "ERROR", message);
-                _moduleOutput.Status = false;
+                ui.Success(message);
+                logger.Info("Download OK - nuget.exe");
             }
             else
             {
-                message = $"\t\t[+] Path found - {ConfigurationManager.AppSettings["BuildCSharpTools"]}";
-                LogHelpers.PrintOk(message);
-                LogHelpers.LogToFile($"{Name} - CheckStart", "INFO", message);
+                message = "\t\t[+] Download ERROR - nuget.exe";
+                ui.Failure(message);
+                logger.Error("Download ERROR - nuget.exe");
+                return new ModuleResult { Name = Name, OutputPath = context.OutputPath, Status = false };
             }
-            return _moduleOutput;
+        }
+        else
+        {
+            message = "\t\t[+] Download OK - nuget.exe";
+            ui.Success(message);
+            logger.Info($"nuget.exe already present at {paths.NugetPath}");
         }
 
-        ModuleOutput iModule.Run()
+        if (!File.Exists(options.BuildCSharpTools))
         {
-            string message;
-            //_moduleOutput.OutputPath = Path.Combine(Directory.GetCurrentDirectory(), Conf.outputsPath, $"{_tool.name}_{Helpers.GetRandomString()}");
-            string text = File.ReadAllText(Conf.templateBuildPath);
+            message = $"\t\t[-] File not found: {options.BuildCSharpTools}";
+            ui.Failure(message);
+            logger.Error($"Build tools not found: {options.BuildCSharpTools}");
+            status = false;
+        }
+        else
+        {
+            message = $"\t\t[+] Path found - {options.BuildCSharpTools}";
+            ui.Success(message);
+            logger.Info($"Build tools found: {options.BuildCSharpTools}");
+        }
 
-            string solutionPath = Path.Combine(Directory.GetCurrentDirectory(), Conf.gitToolsPath, _tool.solutionPath);
-            if (File.Exists(solutionPath))
+        return new ModuleResult { Name = Name, OutputPath = context.OutputPath, Status = status };
+    }
+
+    public ModuleResult Run(ModuleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        string message;
+        string outputPath = context.OutputPath;
+        string text = File.ReadAllText(paths.TemplateBuildPath);
+        string solutionPath = context.SolutionPath;
+
+        if (File.Exists(solutionPath))
+        {
+            string solutionDir = Path.GetDirectoryName(solutionPath)
+                ?? throw new InvalidOperationException($"{Name}: cannot determine the folder of {solutionPath}.");
+
+            message = "\tSolving dependences with nuget...";
+            ui.Phase(message);
+            logger.Info($"Restoring packages for {solutionPath}");
+            Console.ResetColor();
+
+            CommandResult restore = processRunner.Run($"{paths.NugetPath} restore {solutionPath}");
+            if (!restore.Succeeded)
             {
-                message = $"\tSolving dependences with nuget...";
-                LogHelpers.PrintBlue(message);
-                LogHelpers.LogToFile($"{Name} - BuildTool", "INFO", message);
-                Console.ResetColor();
-                if (!Helpers.ExecuteCommand($"{Path.Combine(Directory.GetCurrentDirectory(), Conf.nugetPath)} restore {solutionPath}"))
-                {
-                    message = $"BuildTool: {Path.Combine(Directory.GetCurrentDirectory(), Conf.nugetPath)} - {solutionPath}";
-                    LogHelpers.PrintError(message);
-                    LogHelpers.LogToFile($"{Name} - BuildTool", "ERROR", message);
-                    _moduleOutput.Status = false;
-                    return _moduleOutput;
-                }
-                text = text.Replace("{{MSBUILD_PATH}}", ConfigurationManager.AppSettings["BuildCSharpTools"]);
-                text = text.Replace("{{SOLUTION_PATH}}", solutionPath);
-                text = text.Replace("{{BUILD_OPTIONS}}", buildOptions);
-                text = text.Replace("{{OUTPUT_DIR}}", _moduleOutput.OutputPath);
-                text = text.Replace("{{OUTPUT_FILENAME}}", Helpers.GetRandomString());
+                message = $"BuildTool: {paths.NugetPath} - {solutionPath}";
+                ui.Failure(message);
+                logger.Error($"{message} - exit code {restore.ExitCode} - {restore.StdErr}");
+                return new ModuleResult { Name = Name, OutputPath = outputPath, Status = false };
+            }
 
-                string batPath = Path.Combine(Path.GetDirectoryName(solutionPath), "buildSolution.bat");
-                File.WriteAllText(batPath, text);
-                LogHelpers.PrintBlue("\tBuilding solution...");
-                if (!Helpers.ExecuteCommand(batPath))
-                {
-                    message = $"BuildTool: msbuild.exe: {solutionPath}";
-                    LogHelpers.PrintError(message);
-                    LogHelpers.LogToFile($"{Name} - BuildTool", "ERROR", message);
-                    _moduleOutput.Status = false;
-                    return _moduleOutput;
-                }
-                else
-                {
-                    message = "\t\t[+] No errors!";
-                    LogHelpers.PrintOk(message);
-                    LogHelpers.LogToFile($"{Name} - BuildTool", "INFO", message);
-                }
+            text = text.Replace("{{MSBUILD_PATH}}", options.BuildCSharpTools, StringComparison.Ordinal);
+            text = text.Replace("{{SOLUTION_PATH}}", solutionPath, StringComparison.Ordinal);
+            text = text.Replace("{{BUILD_OPTIONS}}", options.BuildCsharpOptions, StringComparison.Ordinal);
+            text = text.Replace("{{OUTPUT_DIR}}", outputPath, StringComparison.Ordinal);
+            text = text.Replace("{{OUTPUT_FILENAME}}", Helpers.GetRandomString(), StringComparison.Ordinal);
 
-                //Gets all references to the project to obfuscate it with confuser
-                SolutionFile s = SolutionFile.Parse(solutionPath);
-                foreach (ProjectInSolution p in s.ProjectsInOrder)
+            string batPath = Path.Combine(solutionDir, "buildSolution.bat");
+            File.WriteAllText(batPath, text);
+            ui.Phase("\tBuilding solution...");
+
+            CommandResult build = processRunner.Run(batPath);
+            if (!build.Succeeded)
+            {
+                message = $"BuildTool: msbuild.exe: {solutionPath}";
+                ui.Failure(message);
+                logger.Error($"{message} - exit code {build.ExitCode} - {build.StdErr}");
+                return new ModuleResult { Name = Name, OutputPath = outputPath, Status = false };
+            }
+
+            message = "\t\t[+] No errors!";
+            ui.Success(message);
+            logger.Info($"Build completed for {solutionPath}");
+
+            // Gets all references to the project to obfuscate it with confuser
+            CopyProjectReferences(solutionPath, solutionDir, outputPath);
+        }
+
+        message = $"\t\t[+] Output folder: {outputPath}";
+        ui.Success(message);
+        logger.Info($"Output folder: {outputPath}");
+        return new ModuleResult { Name = Name, OutputPath = outputPath };
+    }
+
+    private static void CopyProjectReferences(string solutionPath, string referenceRoot, string outputPath)
+    {
+        foreach (string projectPath in SolutionFileReader.GetProjectPaths(solutionPath))
+        {
+            if (!File.Exists(projectPath))
+            {
+                continue;
+            }
+
+            foreach (string reference in ProjectHintPaths.Read(projectPath))
+            {
+                string referenceFile = reference.Replace(@"..\", string.Empty, StringComparison.Ordinal);
+                string sourceFile = Path.Combine(referenceRoot, referenceFile);
+                if (File.Exists(sourceFile))
                 {
-                    if (File.Exists(p.AbsolutePath))
-                    {
-                        XNamespace msbuild = "http://schemas.microsoft.com/developer/msbuild/2003";
-                        XDocument projDefinition = XDocument.Load(p.AbsolutePath);
-                        IEnumerable<string> references = projDefinition
-                            .Element(msbuild + "Project")
-                            .Elements(msbuild + "ItemGroup")
-                            .Elements(msbuild + "Reference")
-                            .Elements(msbuild + "HintPath")
-                            .Select(refElem => refElem.Value);
-                        foreach (string reference in references)
-                        {
-                            string referenceFile = reference.Replace(@"..\", "");
-                            if (File.Exists(Path.Combine(Path.GetDirectoryName(solutionPath), referenceFile)))
-                            {
-                                File.Copy(
-                                    Path.Combine(Path.GetDirectoryName(solutionPath), referenceFile),
-                                    Path.Combine(_moduleOutput.OutputPath, Path.GetFileName(referenceFile)),
-                                    true);
-                            }
-                        }
-                    }
+                    File.Copy(sourceFile, Path.Combine(outputPath, Path.GetFileName(referenceFile)), true);
                 }
             }
-            message = $"\t\t[+] Output folder: {_moduleOutput.OutputPath}";
-            LogHelpers.PrintOk(message);
-            LogHelpers.LogToFile($"{Name} - BuildTool", "INFO", message);
-            return _moduleOutput;
         }
     }
 }

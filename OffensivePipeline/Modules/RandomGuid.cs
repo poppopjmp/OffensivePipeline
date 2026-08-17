@@ -1,122 +1,95 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using OffensivePipeline.Diagnostics;
+using OffensivePipeline.Ui;
 
-namespace OffensivePipeline.Modules
+namespace OffensivePipeline.Modules;
+
+internal sealed partial class RandomGuid(IConsoleUi ui, ILogger<RandomGuid> logger) : IModule
 {
-    internal class RandomGuid : iModule
+    public string Name => "RandomGuid";
+
+    [GeneratedRegex(
+        @"[(]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[)]?",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex GuidPattern();
+
+    public ModuleResult CheckStart(ModuleContext context) =>
+        new() { Name = Name, OutputPath = context.OutputPath };
+
+    public ModuleResult Run(ModuleContext context)
     {
-        public string Name => "RandomGuid";
-        public ToolConfig _tool { get; set; }
-        public ModuleOutput _moduleOutput { get; set; }
+        ArgumentNullException.ThrowIfNull(context);
 
-        private string _regexStr = @"[(]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[)]?";
-        public RandomGuid(ToolConfig tool, ModuleOutput moduleOutput)
-        {
-            _tool = tool;
-            _moduleOutput = moduleOutput;
-        }
+        List<string> files = FindFiles(context);
+        bool status = true;
 
-        public ModuleOutput CheckStart()
-        {
-            return _moduleOutput;
-        }
+        Report("\tSearching GUIDs...", ui.Phase);
 
-        private List<string> FindFiles()
+        // First pass: collect every GUID used anywhere in the tool, so the same GUID is rewritten
+        // to the same replacement in every file that mentions it.
+        HashSet<string> guids = [];
+        foreach (string file in files)
         {
-            List<string> lFiles = new List<string>();
-            lFiles.Add(Path.Combine(Directory.GetCurrentDirectory(), Conf.gitToolsPath, _tool.solutionPath));
-            foreach (
-                string file in Directory.EnumerateFiles(
-                    Path.Combine(Directory.GetCurrentDirectory(), Conf.gitToolsPath, _tool.name), "*.csproj", SearchOption.AllDirectories))
+            Report($"\t\t> {file}", ui.Detail);
+
+            if (File.Exists(file))
             {
-                lFiles.Add(file);
-            }
-            foreach (
-                string file in Directory.EnumerateFiles(
-                    Path.Combine(Directory.GetCurrentDirectory(), Conf.gitToolsPath, _tool.name), "AssemblyInfo.cs", SearchOption.AllDirectories))
-            {
-                lFiles.Add(file);
-            }
-            return lFiles;
-        }
-
-        public ModuleOutput Run()
-        {
-            List<string> lFiles = FindFiles();
-            Regex rx = new Regex(_regexStr, RegexOptions.Compiled | RegexOptions.IgnoreCase);
-            string message;
-            List<string> lGuid = new List<string>();
-            Hashtable hTable = new Hashtable();
-            string fContent;
-            message = $"\tSearching GUIDs...";
-            LogHelpers.PrintBlue(message);
-            LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-            foreach (string file in lFiles) //first get all GUIDs
-            {
-                message = $"\t\t> {file}";
-                LogHelpers.PrintGray(message);
-                LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                if (File.Exists(file))
+                foreach (Match match in GuidPattern().Matches(File.ReadAllText(file)))
                 {
-                    fContent = File.ReadAllText(file);
-                    MatchCollection matches = rx.Matches(fContent);
-                    
-                    //get all guid
-                    foreach (Match match in matches)
-                    {
-                        lGuid.Add(match.Value);
-                    }
+                    guids.Add(match.Value);
                 }
             }
-            //replace all GUID
-            message = $"\tReplacing GUIDs...";
-            LogHelpers.PrintBlue(message);
-            LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-            foreach (string file in lFiles) 
-            {
-                //remove duplicates and generate new guid
-                foreach (string guid in lGuid.Distinct())
-                {
-                    try
-                    {
-                        hTable.Add(guid, Guid.NewGuid());
-                    }
-                    catch { }
-                }
-                //replace guid
-                fContent = File.ReadAllText(file);
-                message = $"\t\tFile {file}:";
-                LogHelpers.PrintGray(message);
-                LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                foreach (DictionaryEntry de in hTable)
-                {
-                    message = $"\t\t\t> Replacing GUID {de.Key.ToString()} with {de.Value.ToString()}";
-                    LogHelpers.PrintGray(message);
-                    LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                    fContent = fContent.Replace(de.Key.ToString(), de.Value.ToString());
-                }
-                File.WriteAllText(file, fContent);
-                if (File.Exists(file))
-                {
-                    message = "\t\t[+] No errors!";
-                    LogHelpers.PrintOk(message);
-                    LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                }
-                else
-                {
-                    _moduleOutput.Status = false;
-                    message = $"\t\t[+] File not found {file}";
-                    LogHelpers.PrintError(message);
-                    LogHelpers.LogToFile($"{Name} - Run", "ERROR", message);
-                }
-
-            }
-            return _moduleOutput;
         }
+
+        Dictionary<string, string> replacements = [];
+        foreach (string guid in guids)
+        {
+            replacements.TryAdd(guid, Guid.NewGuid().ToString());
+        }
+
+        Report("\tReplacing GUIDs...", ui.Phase);
+
+        foreach (string file in files)
+        {
+            if (!File.Exists(file))
+            {
+                status = false;
+                string missing = $"\t\t[+] File not found {file}";
+                ui.Failure(missing);
+                logger.Error(missing.Trim());
+                continue;
+            }
+
+            string fileContent = File.ReadAllText(file);
+            Report($"\t\tFile {file}:", ui.Detail);
+
+            foreach ((string oldGuid, string newGuid) in replacements)
+            {
+                Report($"\t\t\t> Replacing GUID {oldGuid} with {newGuid}", ui.Detail);
+                fileContent = fileContent.Replace(oldGuid, newGuid, StringComparison.Ordinal);
+            }
+
+            File.WriteAllText(file, fileContent);
+
+            Report("\t\t[+] No errors!", ui.Success);
+        }
+
+        return new ModuleResult { Name = Name, OutputPath = context.OutputPath, Status = status };
+    }
+
+    private void Report(string message, Action<string> write)
+    {
+        write(message);
+        logger.Info(message.Trim());
+    }
+
+    private static List<string> FindFiles(ModuleContext context)
+    {
+        string toolRoot = context.ToolCheckoutPath;
+        List<string> files = [context.SolutionPath];
+        files.AddRange(Directory.EnumerateFiles(toolRoot, "*.csproj", SearchOption.AllDirectories));
+        files.AddRange(Directory.EnumerateFiles(toolRoot, "AssemblyInfo.cs", SearchOption.AllDirectories));
+        return files;
     }
 }

@@ -1,34 +1,29 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+namespace OffensivePipeline;
 
-namespace OffensivePipeline
+/// <summary>
+/// A single tool definition, as read from a <c>Tools/*.yml</c> template.
+/// </summary>
+/// <remarks>
+/// The YAML keys are matched by string literal in <see cref="YmlHelpers"/>, not by reflection over
+/// these property names, so the C# properties may use normal .NET naming.
+/// </remarks>
+public sealed record ToolConfig
 {
-    public class ToolConfig
-    {
-        public ToolConfig(string name, string description, string gitLink, string solutionPath, string language, string plugins, string authUser, string authToken, string toolArguments)
-        {
-            this.name = name;
-            this.description = description;
-            this.gitLink = gitLink;
-            this.solutionPath = solutionPath;
-            this.language = language;
-            this.plugins = plugins.Split(',').Select(s => s.Trim()).ToList<string>();
-            this.authUser = authUser;
-            this.authToken = authToken;
-            this.toolArguments = toolArguments;
-        }
+    public required string Name { get; init; }
 
-        public string name { get; set; }
-        public string description { get; set; }
-        public string gitLink { get; set; }
-        public string solutionPath { get; set; }
-        public string language { get; set; }
-        public List<string> plugins { get; set; }
-        public string authUser { get; set; }
-        public string authToken { get; set; }
-        public string toolArguments { get; set; }
-    }
+    public required string Description { get; init; }
+
+    public required string GitLink { get; init; }
+
+    public required string SolutionPath { get; init; }
+
+    public required string Language { get; init; }
+
+    public required IReadOnlyList<string> Plugins { get; init; }
+
+    public required string AuthUser { get; init; }
+
+    public required string AuthToken { get; init; }
+
+    public required string ToolArguments { get; init; }
 }

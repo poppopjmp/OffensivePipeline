@@ -1,71 +1,88 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Donut;
 using Donut.Structs;
+using Microsoft.Extensions.Logging;
+using OffensivePipeline.Diagnostics;
+using OffensivePipeline.Ui;
 
-namespace OffensivePipeline.Modules
+namespace OffensivePipeline.Modules;
+
+internal sealed class Donut(IConsoleUi ui, ILogger<Donut> logger) : IModule
 {
-    internal class Donut : iModule
+    /// <summary>Donut's <c>DONUT_ERROR_SUCCESS</c>; every other code is a failure.</summary>
+    private const int DonutSuccess = 0;
+
+    public string Name => "Donut";
+
+    /// <summary>Where this module writes, nested inside the folder the previous stage produced.</summary>
+    private static string OutputFolder(ModuleContext context) =>
+        Path.Combine(context.OutputPath, "Donut");
+
+    public ModuleResult CheckStart(ModuleContext context)
     {
-        public string Name => "Donut";
-        public ToolConfig _tool { get; set; }
-        public ModuleOutput _moduleOutput { get; set; }
-        
-        private string previousFolder;
-        
-        public Donut(ToolConfig tool, ModuleOutput moduleOutput)
-        {
-            _tool = tool;
-            _moduleOutput = moduleOutput;
-            previousFolder = _moduleOutput.OutputPath;
-            _moduleOutput.OutputPath = Path.Combine(_moduleOutput.OutputPath, Name);
-            Helpers.CheckFolder(_moduleOutput.OutputPath);
-        }
+        ArgumentNullException.ThrowIfNull(context);
 
-        public ModuleOutput CheckStart()
-        {
-            return _moduleOutput;
-        }
+        // Moved out of the constructor so that resolving this module has no side effects.
+        string outputPath = OutputFolder(context);
+        Helpers.CheckFolder(outputPath);
 
-        public ModuleOutput Run()
+        return new ModuleResult { Name = Name, OutputPath = outputPath };
+    }
+
+    public ModuleResult Run(ModuleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        string previousFolder = context.OutputPath;
+        string outputPath = OutputFolder(context);
+        bool status = true;
+
+        string message;
+        foreach (string exe in Directory.GetFiles(previousFolder, "*.exe"))
         {
-            string message;
-            string[] exeList = Directory.GetFiles(previousFolder, "*.exe");
-            foreach (string exe in exeList)
+            try
             {
-                try
+                message = "\tGenerating shellcode...";
+                ui.Phase(message);
+                logger.Info($"Generating shellcode from {exe}");
+
+                var config = new DonutConfig
                 {
-                    message = $"\tGenerating shellcode...";
-                    LogHelpers.PrintBlue(message);
-                    LogHelpers.LogToFile($"{Name} - Donut", "INFO", message);
-                    DonutConfig config = new DonutConfig();
-                    config.Arch = 3; //Target architecture for loader : 1=x86, 2=amd64, 3=x86+amd64(default).
-                    config.Bypass = 3; //Behavior for bypassing AMSI/WLDP : 1=None, 2=Abort on fail, 3=Continue on fail.(default)
-                    config.InputFile = exe;
-                    config.Payload = Path.Combine(_moduleOutput.OutputPath, $"{_tool.name}.bin");
-                    if (_tool.toolArguments != "") {
-                        LogHelpers.PrintOk($"\t - Arguments passed to shellcode : \"{_tool.toolArguments}\"");
-                        config.Args = _tool.toolArguments;
-                    }
-                    int ret = Generator.Donut_Create(ref config);
-                    message = "\t\t[+] No errors!";
-                    LogHelpers.PrintOk(message);
-                    LogHelpers.LogToFile($"{Name} - Donut", "INFO", message);
-                    //Console.WriteLine(Helper.GetError(ret));
+                    Arch = 3, // Target architecture for loader : 1=x86, 2=amd64, 3=x86+amd64(default).
+                    Bypass = 3, // Behavior for bypassing AMSI/WLDP : 1=None, 2=Abort on fail, 3=Continue on fail.(default)
+                    InputFile = exe,
+                    Payload = Path.Combine(outputPath, $"{context.Tool.Name}.bin"),
+                };
+
+                if (!string.IsNullOrEmpty(context.Tool.ToolArguments))
+                {
+                    ui.Success($"\t - Arguments passed to shellcode : \"{context.Tool.ToolArguments}\"");
+                    config.Args = context.Tool.ToolArguments;
                 }
-                catch (Exception e)
+
+                int ret = Generator.Donut_Create(ref config);
+                if (ret == DonutSuccess)
                 {
-                    message = $"Donut: {exe}";
-                    LogHelpers.PrintError(message);
-                    LogHelpers.LogToFile($"{Name} - Donut", "ERROR", message);
-                    _moduleOutput.Status = false;
+                    message = "\t\t[+] No errors!";
+                    ui.Success(message);
+                    logger.Info($"Shellcode generated for {exe}");
+                }
+                else
+                {
+                    message = $"Donut: {exe} - Donut_Create returned error code {ret}";
+                    ui.Failure(message);
+                    logger.Error(message);
+                    status = false;
                 }
             }
-
-            return _moduleOutput;
+            catch (Exception e)
+            {
+                message = $"Donut: {exe} - {e}";
+                ui.Failure(message);
+                logger.Error(e, $"Donut failed for {exe}");
+                status = false;
+            }
         }
+
+        return new ModuleResult { Name = Name, OutputPath = outputPath, Status = status };
     }
 }

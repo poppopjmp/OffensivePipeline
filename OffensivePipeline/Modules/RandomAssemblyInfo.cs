@@ -1,137 +1,103 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Data.SqlTypes;
-using System.Linq;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using OffensivePipeline.Diagnostics;
+using OffensivePipeline.Ui;
 
-namespace OffensivePipeline.Modules
+namespace OffensivePipeline.Modules;
+
+internal sealed partial class RandomAssemblyInfo(IConsoleUi ui, ILogger<RandomAssemblyInfo> logger) : IModule
 {
-    internal class RandomAssemblyInfo : iModule
+    /// <summary>How many years back the generated fake copyright year may reach.</summary>
+    private const int CopyrightYearSpan = 4;
+
+    public string Name => "RandomAssemblyInfo";
+
+    public ModuleResult CheckStart(ModuleContext context) =>
+        new() { Name = Name, OutputPath = context.OutputPath };
+
+    public ModuleResult Run(ModuleContext context)
     {
-        public string Name => "RandomAssemblyInfo";
-        public ToolConfig _tool { get; set; }
-        public ModuleOutput _moduleOutput { get; set; }
+        ArgumentNullException.ThrowIfNull(context);
 
-        private string _regexAssemblyTitle = @"\[assembly: AssemblyTitle\(.*\)]";
-        private string _regexAssemblyDescription = @"\[assembly: AssemblyDescription\(.*\)]";
-        private string _regexAssemblyConfiguration = @"\[assembly: AssemblyConfiguration\(.*\)]";
-        private string _regexAssemblyCompany = @"\[assembly: AssemblyCompany\(.*\)]";
-        private string _regexAssemblyProduct = @"\[assembly: AssemblyProduct\(.*\)]";
-        private string _regexAssemblyCopyright = @"\[assembly: AssemblyCopyright\(.*\)]";
-        private string _regexAssemblyTrademark = @"\[assembly: AssemblyTrademark\(.*\)]";
-        private string _regexAssemblyCulture = @"\[assembly: AssemblyCulture\(.*\)]";
-
-        public RandomAssemblyInfo(ToolConfig tool, ModuleOutput moduleOutput)
+        foreach (string file in FindFiles(context))
         {
-            _tool = tool;
-            _moduleOutput = moduleOutput;
-        }
-        public ModuleOutput CheckStart()
-        {
-            return _moduleOutput;
-        }
-
-        private List<string> FindFiles()
-        {
-            List<string> lFiles = new List<string>();
-            foreach (
-                string file in Directory.EnumerateFiles(
-                    Path.Combine(Directory.GetCurrentDirectory(), Conf.gitToolsPath, _tool.name), "AssemblyInfo.cs", SearchOption.AllDirectories))
+            if (!File.Exists(file))
             {
-                lFiles.Add(file);
+                continue;
             }
-            return lFiles;
-        }
 
-        public ModuleOutput Run()
-        {
-            List<string> lFiles = FindFiles();
-            string message;
-            foreach (string file in lFiles)
+            string message = $"\tReplacing strings in {file}";
+            ui.Phase(message);
+            logger.Info($"Replacing strings in {file}");
+
+            string fileContent = File.ReadAllText(file);
+            foreach ((Regex pattern, string replacement) in BuildRules(Helpers.GetRandomString()))
             {
-                if (File.Exists(file))
+                foreach (Match match in pattern.Matches(fileContent))
                 {
-                    message = $"\tReplacing strings in {file}";
-                    LogHelpers.PrintBlue(message);
-                    LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                    string fContent = File.ReadAllText(file);
-                    fContent = File.ReadAllText(file);
-                    string randomName = Helpers.GetRandomString();
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyTitle))
-                    {
-                        string replacement = $"[assembly: AssemblyTitle(\"{randomName}\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyDescription))
-                    {
-                        string replacement = $"[assembly: AssemblyDescription(\"\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyConfiguration))
-                    {
-                        string replacement = $"[assembly: AssemblyConfiguration(\"\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyCompany))
-                    {
-                        string replacement = $"[assembly: AssemblyCompany(\"\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyProduct))
-                    {
-                        string replacement = $"[assembly: AssemblyProduct(\"{randomName}\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyCopyright))
-                    {
-                        var random = new Random();
-
-                        string replacement = $"[assembly: AssemblyCopyright(\"Copyright ©  {RandomNumberGenerator.GetInt32(2018, 2022)}\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyTrademark))
-                    {
-                        string replacement = $"[assembly: AssemblyTrademark(\"\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    foreach (Match match in Regex.Matches(fContent, _regexAssemblyCulture))
-                    {
-                        string replacement = $"[assembly: AssemblyCulture(\"\")]";
-                        message = $"\t\t{match.Value} -> {replacement}";
-                        LogHelpers.PrintGray(message);
-                        LogHelpers.LogToFile($"{Name} - Run", "INFO", message);
-                        fContent = fContent.Replace(match.Value, replacement);
-                    }
-                    File.WriteAllText(file, fContent);
+                    message = $"\t\t{match.Value} -> {replacement}";
+                    ui.Detail(message);
+                    logger.Info($"{match.Value} -> {replacement}");
+                    fileContent = fileContent.Replace(match.Value, replacement, StringComparison.Ordinal);
                 }
             }
-           
-            return _moduleOutput;
+
+            File.WriteAllText(file, fileContent);
         }
+
+        return new ModuleResult { Name = Name, OutputPath = context.OutputPath };
     }
+
+    /// <summary>
+    /// The assembly attributes to overwrite, in the order they are reported. A rolling copyright
+    /// year is used rather than a fixed range, so the stamp does not itself look anomalous.
+    /// </summary>
+    private static (Regex Pattern, string Replacement)[] BuildRules(string randomName)
+    {
+        int currentYear = DateTime.UtcNow.Year;
+        int copyrightYear = RandomNumberGenerator.GetInt32(currentYear - CopyrightYearSpan + 1, currentYear + 1);
+
+        return
+        [
+            (AssemblyTitle(), $"[assembly: AssemblyTitle(\"{randomName}\")]"),
+            (AssemblyDescription(), "[assembly: AssemblyDescription(\"\")]"),
+            (AssemblyConfiguration(), "[assembly: AssemblyConfiguration(\"\")]"),
+            (AssemblyCompany(), "[assembly: AssemblyCompany(\"\")]"),
+            (AssemblyProduct(), $"[assembly: AssemblyProduct(\"{randomName}\")]"),
+            (AssemblyCopyright(), $"[assembly: AssemblyCopyright(\"Copyright ©  {copyrightYear}\")]"),
+            (AssemblyTrademark(), "[assembly: AssemblyTrademark(\"\")]"),
+            (AssemblyCulture(), "[assembly: AssemblyCulture(\"\")]"),
+        ];
+    }
+
+    private static List<string> FindFiles(ModuleContext context) =>
+    [
+        .. Directory.EnumerateFiles(
+            context.ToolCheckoutPath, "AssemblyInfo.cs", SearchOption.AllDirectories),
+    ];
+
+    [GeneratedRegex(@"\[assembly: AssemblyTitle\(.*\)]")]
+    private static partial Regex AssemblyTitle();
+
+    [GeneratedRegex(@"\[assembly: AssemblyDescription\(.*\)]")]
+    private static partial Regex AssemblyDescription();
+
+    [GeneratedRegex(@"\[assembly: AssemblyConfiguration\(.*\)]")]
+    private static partial Regex AssemblyConfiguration();
+
+    [GeneratedRegex(@"\[assembly: AssemblyCompany\(.*\)]")]
+    private static partial Regex AssemblyCompany();
+
+    [GeneratedRegex(@"\[assembly: AssemblyProduct\(.*\)]")]
+    private static partial Regex AssemblyProduct();
+
+    [GeneratedRegex(@"\[assembly: AssemblyCopyright\(.*\)]")]
+    private static partial Regex AssemblyCopyright();
+
+    [GeneratedRegex(@"\[assembly: AssemblyTrademark\(.*\)]")]
+    private static partial Regex AssemblyTrademark();
+
+    [GeneratedRegex(@"\[assembly: AssemblyCulture\(.*\)]")]
+    private static partial Regex AssemblyCulture();
 }

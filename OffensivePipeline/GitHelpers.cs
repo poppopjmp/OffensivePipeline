@@ -1,110 +1,135 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Policy;
-using System.Text;
-using System.Threading.Tasks;
-using LibGit2Sharp;
+using Microsoft.Extensions.Logging;
+using OffensivePipeline.Config;
+using OffensivePipeline.Diagnostics;
+using OffensivePipeline.Infrastructure;
+using OffensivePipeline.Ui;
 
+namespace OffensivePipeline;
 
-
-namespace OffensivePipeline
+/// <summary>
+/// Gets a tool's source onto disk, whether that means cloning a repository or copying a local
+/// folder, and verifies the declared solution file actually arrived.
+/// </summary>
+internal sealed class GitHelpers(
+    IGitClient gitClient,
+    IConsoleUi ui,
+    ILogger<GitHelpers> logger,
+    PipelinePaths paths)
 {
-    internal class GitHelpers
+    public bool CloneLocalTool(ToolConfig tool)
     {
-        public static bool CloneLocalTool(ToolConfig tool)
+        if (!CloneChecks(tool))
         {
-            bool status = CloneChecks(tool);
-            if (status)
-            {
-                string toolPath = Path.Combine(Conf.gitToolsPath, tool.name);
-                status = Helpers.CopyDirectory(tool.gitLink, toolPath, true);
-                if (status)
-                {
-                    if (!File.Exists(Path.Combine(Conf.gitToolsPath, tool.solutionPath)))
-                    {
-                        status = false;
-                        LogHelpers.PrintError($"CloneLocalTool: Folder not found {toolPath}");
-                    }
-                    else
-                    {
-                        LogHelpers.PrintOk($"\t\t Repository {tool.name} copied into {toolPath}");
-                    }
-                }
-            }
-            return status;
+            return false;
         }
-        public static bool CloneChecks(ToolConfig tool)
+
+        string toolPath = Path.Combine(paths.GitToolsPath, tool.Name);
+        List<string> errors = [];
+        bool status = Helpers.CopyDirectory(tool.GitLink, toolPath, true, errors);
+        foreach (string error in errors)
         {
-            bool status = true;
+            ui.Failure($"CopyDirectory: {error}");
+            logger.Error($"CopyDirectory: {error}");
+        }
+
+        if (!status)
+        {
+            return false;
+        }
+
+        if (!File.Exists(Path.Combine(paths.GitToolsPath, tool.SolutionPath)))
+        {
+            ui.Failure($"CloneLocalTool: Folder not found {toolPath}");
+            logger.Error($"CloneLocalTool: solution not found after copying {tool.Name} into {toolPath}");
+            return false;
+        }
+
+        ui.Success($"\t\t Repository {tool.Name} copied into {toolPath}");
+        logger.Info($"Repository {tool.Name} copied into {toolPath}");
+        return true;
+    }
+
+    public bool CloneChecks(ToolConfig tool)
+    {
+        bool status = true;
+        try
+        {
+            if (!Directory.Exists(paths.GitToolsPath))
+            {
+                Directory.CreateDirectory(paths.GitToolsPath);
+            }
+        }
+        catch (Exception e)
+        {
+            ui.Failure($"CloneChecks - Creating {paths.GitToolsPath} folder - {e}");
+            logger.Error(e, $"CloneChecks: could not create {paths.GitToolsPath}");
+            status = false;
+        }
+
+        if (status)
+        {
+            string toolPath = Path.Combine(paths.GitToolsPath, tool.Name);
             try
             {
-                if (!Directory.Exists(Conf.gitToolsPath))
+                if (Directory.Exists(toolPath))
                 {
-                    DirectoryInfo di = Directory.CreateDirectory(Conf.gitToolsPath);
+                    Helpers.DeleteReadOnlyDirectory(toolPath);
                 }
             }
             catch (Exception e)
             {
-                LogHelpers.PrintError($"DownloadRepository - Creating {Conf.gitToolsPath} folder - {e}");
+                ui.Failure($"CloneChecks - Deleting {toolPath} folder - {e}");
+                logger.Error(e, $"CloneChecks: could not delete {toolPath}");
                 status = false;
             }
-            if (status)
+        }
+
+        return status;
+    }
+
+    public bool DownloadRepository(ToolConfig tool)
+    {
+        if (!CloneChecks(tool))
+        {
+            return false;
+        }
+
+        try
+        {
+            string toolPath = Path.Combine(paths.GitToolsPath, tool.Name);
+
+            // CloneChecks has just removed this directory. If it is still here the delete
+            // failed (typically a locked checkout) and cloning into it would silently build a
+            // stale tree, so fail instead.
+            if (Directory.Exists(toolPath))
             {
-                string toolPath = Path.Combine(Conf.gitToolsPath, tool.name);
-                try
-                {
-                    if (Directory.Exists(toolPath))
-                    {
-                        Helpers.DeleteReadOnlyDirectory(toolPath);
-                    }
-                }
-                catch (Exception e)
-                {
-                    LogHelpers.PrintError($"CloneChecks - Deleting {toolPath} folder - {e}");
-                    status = false;
-                }
+                ui.Failure($"DownloadRepository: Existing folder could not be removed {toolPath}");
+                logger.Error($"DownloadRepository: existing checkout could not be removed {toolPath}");
+                return false;
             }
 
-            return status;
-        }
-        public static bool DownloadRepository(ToolConfig tool)
-        {
-            bool status = CloneChecks(tool);
-            if (status)
+            ui.Heading($"    Cloning repository: {tool.Name} into {toolPath}");
+            logger.Info($"Cloning {tool.Name} from {tool.GitLink} into {toolPath}");
+
+            gitClient.Clone(tool.GitLink, toolPath, tool.AuthUser, tool.AuthToken);
+
+            string solutionPath = Path.Combine(paths.GitToolsPath, tool.SolutionPath);
+            if (!File.Exists(solutionPath))
             {
-                try
-                {
-                    string toolPath = Path.Combine(Conf.gitToolsPath, tool.name);
-                    if (!Directory.Exists(toolPath))
-                    {
-                        LogHelpers.PrintYellow($"    Clonnig repository: {tool.name} into {toolPath}");
-                        CloneOptions co = new CloneOptions();
-                        if (tool.authToken != "")
-                        {
-                            string gitUser = tool.authUser, gitToken = tool.authToken;
-                            co.FetchOptions.CredentialsProvider = (_url, _user, _cred) => new UsernamePasswordCredentials { Username = gitUser, Password = gitToken };
-                        }
-                        co.RecurseSubmodules = true;
-                        _ = Repository.Clone(tool.gitLink, toolPath, co);
-                        if (!File.Exists(Path.Combine(Conf.gitToolsPath, tool.solutionPath)))
-                        {
-                            status = false;
-                            LogHelpers.PrintError($"DownloadRepository: Solution not found {Path.Combine(Conf.gitToolsPath, tool.solutionPath)}");
-                        }
-                        else
-                        {
-                            LogHelpers.PrintOk($"\t\t Repository {tool.name} cloned into {toolPath}");
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    LogHelpers.PrintError($"DownloadRepository: {tool.name} - {e}");
-                    status = false;
-                }
+                ui.Failure($"DownloadRepository: Solution not found {solutionPath}");
+                logger.Error($"DownloadRepository: solution not found {solutionPath}");
+                return false;
             }
-            return status;
+
+            ui.Success($"\t\t Repository {tool.Name} cloned into {toolPath}");
+            logger.Info($"Repository {tool.Name} cloned into {toolPath}");
+            return true;
+        }
+        catch (Exception e)
+        {
+            ui.Failure($"DownloadRepository: {tool.Name} - {e}");
+            logger.Error(e, $"DownloadRepository failed for {tool.Name}");
+            return false;
         }
     }
 }

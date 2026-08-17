@@ -5,6 +5,10 @@ VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OffensivePipeline", "OffensivePipeline\OffensivePipeline.csproj", "{102D65B0-DE68-4FBB-A34F-867CD97CB35F}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OffensivePipeline.Tests", "tests\OffensivePipeline.Tests\OffensivePipeline.Tests.csproj", "{97583EA7-4019-43A2-85CD-8AC936E660D6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,9 +19,16 @@ Global
 		{102D65B0-DE68-4FBB-A34F-867CD97CB35F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{102D65B0-DE68-4FBB-A34F-867CD97CB35F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{102D65B0-DE68-4FBB-A34F-867CD97CB35F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{97583EA7-4019-43A2-85CD-8AC936E660D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97583EA7-4019-43A2-85CD-8AC936E660D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97583EA7-4019-43A2-85CD-8AC936E660D6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97583EA7-4019-43A2-85CD-8AC936E660D6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{97583EA7-4019-43A2-85CD-8AC936E660D6} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {376489D4-29A0-4690-AD99-53919C4BD329}
