@@ -15,7 +15,7 @@ namespace OffensivePipeline.Config;
 /// value in <c>appsettings.json</c> wins; <see cref="LegacyAppConfigNotice"/> reports any legacy
 /// value that is being shadowed, naming the key, rather than letting it be dropped in silence.
 /// </para>
-/// <para>Support is removed in v2.3.0. Deliberately implemented with
+/// <para>Support is removed in v3.1.0. Deliberately implemented with
 /// <see cref="System.Xml.Linq"/> so the retired
 /// <c>System.Configuration.ConfigurationManager</c> package is not needed.</para>
 /// </remarks>
@@ -59,8 +59,18 @@ internal static class LegacyAppConfig
     /// absent or cannot be parsed. A malformed legacy file must never stop the application: it is a
     /// deprecated input, and <c>appsettings.json</c> already carries a full set of defaults.
     /// </summary>
-    public static Dictionary<string, string> ReadSettings(string configFilePath)
+    public static Dictionary<string, string> ReadSettings(string configFilePath) =>
+        ReadSettings(configFilePath, out _);
+
+    /// <inheritdoc cref="ReadSettings(string)"/>
+    /// <param name="malformed">
+    /// Set when the file exists but could not be parsed. The caller keeps running - a deprecated
+    /// input must never be fatal - but <see cref="LegacyAppConfigNotice"/> warns, so a broken file
+    /// silently dropping a customised setting is at least visible.
+    /// </param>
+    public static Dictionary<string, string> ReadSettings(string configFilePath, out bool malformed)
     {
+        malformed = false;
         Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
         if (!File.Exists(configFilePath))
         {
@@ -95,6 +105,7 @@ internal static class LegacyAppConfig
         }
         catch (Exception ex) when (ex is System.Xml.XmlException or IOException or UnauthorizedAccessException)
         {
+            malformed = true;
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 

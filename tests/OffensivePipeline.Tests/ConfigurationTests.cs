@@ -278,6 +278,27 @@ public class ConfigurationTests
     }
 
     /// <summary>
+    /// A legacy file that exists but cannot be parsed must warn, not vanish. It silently supplies
+    /// no values, so without this the operator's customised settings would disappear on upgrade
+    /// with nothing said.
+    /// </summary>
+    [Fact]
+    public void A_Malformed_Legacy_File_Is_Reported()
+    {
+        using var workspace = new TempWorkspace();
+        workspace.CopyShippedAppSettings();
+        File.WriteAllText(workspace.Paths.LegacyAppConfigFile, "<configuration><appSettings>oops");
+
+        var ui = new RecordingConsoleUi();
+        LegacyAppConfigNotice.Report(
+            workspace.Paths, CompositionRoot.BuildConfiguration(workspace.Paths), ui);
+
+        Assert.Contains(
+            ui.TextOf(UiChannel.Warning),
+            w => w.Contains("could not be parsed", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// A legacy value that is still in force must be named, so the operator knows exactly what to
     /// carry into <c>appsettings.json</c> before the file stops being read.
     /// </summary>

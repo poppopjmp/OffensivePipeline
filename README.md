@@ -48,8 +48,8 @@ A common use of OffensivePipeline is to download a tool from a Git repository, r
 - **Real exit codes**, so `OffensivePipeline.exe all && next-step` now behaves ([table](#exit-codes))
 - Runtime downloads can be **SHA-256 verified**: the ConfuserEx CLI ships with its hash pinned,
   and `nuget.exe` warns that it is unverified until you pin `NugetSha256` yourself
-- First **test suite** (267 tests, runs on Linux without network access), plus CodeQL and
-  dependency-review in CI
+- First **test suite** (offline and cross-platform, runs on Windows and Linux in CI), plus
+  CodeQL and dependency-review in CI
 - Command line migrated to `System.CommandLine`; same verbs, plus `--version` and `--verbose`
 - `t <tool>` is case-insensitive and no longer crashes on an unknown tool; `list` is sorted
 - New tool templates are picked up automatically — no more editing the csproj
@@ -110,6 +110,9 @@ OffensivePipeline.exe t rubeus --args "-c All,GPOLocalGroup -d whatever.local"
 ```
 OffensivePipeline.exe clean
 ```
+
+  Removes the `Git/` and `Output/` working directories and deletes `log.txt`, then recreates the
+  empty working directories.
 
 - Echo diagnostics to the console as well as to `log.txt`
 
@@ -354,7 +357,7 @@ Where:
     ![](img/2023-01-15-18-17-14.png)
 - (Alternative) Build Tools for Visual Studio 2019: [https://aka.ms/vs/16/release/vs_BuildTools.exe](https://aka.ms/vs/16/release/vs_BuildTools.exe)
 - Disable the antivirus :D
-- Tested on Windows 10 Pro - Version 20H2 - Build 19045.2486
+- CI builds and tests every push on `windows-latest` and `ubuntu-latest`. The download/build/obfuscate pipeline is exercised manually on Windows 10/11; the code and test suite run on any .NET 10 platform.
 
 ## Configuration
 
@@ -517,7 +520,7 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 - ConfuserEx project: [https://github.com/mkaring/ConfuserEx](https://github.com/mkaring/ConfuserEx)
 - Donut project: [https://github.com/TheWover/donut](https://github.com/TheWover/donut)
 - Donut C# generator: [https://github.com/n1xbyte/donutCS](https://github.com/n1xbyte/donutCS)
-- SharpCollection: [https://github.com/Flangvik/SharpCollection](SharpCollection)
+- SharpCollection: [https://github.com/Flangvik/SharpCollection](https://github.com/Flangvik/SharpCollection)
 
 ## Supported tools
 
@@ -581,7 +584,7 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Seatbelt**:  
   - Description: Seatbelt is a C# project that performs a number of security oriented host-survey "safety checks" relevant from both offensive and defensive security perspectives.  
   - Link: [https://github.com/GhostPack/Seatbelt](https://github.com/GhostPack/Seatbelt) 
-- Sharp-**SMBExec**:  
+- **Sharp-SMBExec**:  
   - Description: A native C# conversion of Kevin Robertsons Invoke-SMBExec powershell script  
   - Link: [https://github.com/checkymander/Sharp-SMBExec](https://github.com/checkymander/Sharp-SMBExec) 
 - **SharpAppLocker**:  

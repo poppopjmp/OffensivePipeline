@@ -20,7 +20,16 @@ internal static class LegacyAppConfigNotice
     /// </remarks>
     public static void Report(PipelinePaths paths, IConfiguration configuration, IConsoleUi ui)
     {
-        Dictionary<string, string> legacy = LegacyAppConfig.ReadSettings(paths.LegacyAppConfigFile);
+        Dictionary<string, string> legacy =
+            LegacyAppConfig.ReadSettings(paths.LegacyAppConfigFile, out bool malformed);
+
+        if (malformed)
+        {
+            ui.Warning("OffensivePipeline.dll.config exists but could not be parsed and was "
+                + "ignored; any settings it holds are NOT in effect. Fix the XML or migrate the "
+                + "values into appsettings.json.");
+            return;
+        }
 
         if (legacy.Count == 0)
         {
