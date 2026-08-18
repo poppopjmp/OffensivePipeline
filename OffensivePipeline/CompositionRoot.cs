@@ -40,13 +40,24 @@ internal static class CompositionRoot
             .AddJsonFile(paths.LocalAppSettingsFile, optional: true, reloadOnChange: false)
             .Build();
 
-    public static ServiceProvider BuildServiceProvider(PipelinePaths paths, IConfiguration configuration)
+    public static ServiceProvider BuildServiceProvider(
+        PipelinePaths paths, IConfiguration configuration, bool jsonMode = false)
     {
         var services = new ServiceCollection();
 
         services.AddSingleton(paths);
         services.AddSingleton(configuration);
-        services.AddSingleton<IConsoleUi, ConsoleUi>();
+
+        // In --json mode every human line goes to stderr, leaving stdout for the JSON document
+        // alone so the output pipes cleanly into jq or a CI step.
+        if (jsonMode)
+        {
+            services.AddSingleton<IConsoleUi>(ConsoleUi.ToStandardError());
+        }
+        else
+        {
+            services.AddSingleton<IConsoleUi, ConsoleUi>();
+        }
 
         var verbosity = ConsoleVerbosity.FromEnvironment();
         services.AddSingleton(verbosity);

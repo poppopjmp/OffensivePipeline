@@ -96,6 +96,11 @@ with are all different. **Read the breaking changes before upgrading an existing
 
 ### Added
 
+- **`--json` output on `list` and `validate`.** Writes a single JSON document to stdout - the
+  banner is suppressed and every human line is routed to stderr - so `list --json | jq` and CI
+  consumers get clean machine output. `list --json` deliberately omits `authUser`/`authToken`,
+  and `validate --json` returns the structured pass/fail report and still exits non-zero on an
+  invalid template.
 - **New `validate` verb.** Checks every `Tools/*.yml` template - required fields, an http(s) or
   local git link, a `.sln` solution path, and only known plugin names - without cloning or
   building, on any platform. Exits non-zero on the first invalid template, so it doubles as a

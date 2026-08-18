@@ -47,6 +47,16 @@ public class CommandLineTests
     public void A_Bare_Verb_Parses_Without_Error(string verb) =>
         Assert.Empty(Root().Parse(verb).Errors);
 
+    [Theory]
+    [InlineData("list", "--json")]
+    [InlineData("validate", "--json")]
+    [InlineData("--json", "list")]
+    public void The_Json_Flag_Parses_On_The_Read_Only_Verbs(params string[] args)
+    {
+        System.CommandLine.ParseResult parsed = Root().Parse(args);
+        Assert.Empty(parsed.Errors);
+    }
+
     [Fact]
     public void The_Tool_Verb_Binds_Its_Argument()
     {

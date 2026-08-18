@@ -56,6 +56,8 @@ A common use of OffensivePipeline is to download a tool from a Git repository, r
 - New `validate` verb checks every template (fields, git link, plugins) without building, so a
   broken template is caught up front instead of mid-run; a malformed template no longer aborts
   the whole tool
+- `list` and `validate` accept `--json` for machine-readable output (clean stdout, secrets
+  omitted), so the tool drops into scripts and CI
 
 ## What's new in version 2.1
 
@@ -126,6 +128,19 @@ OffensivePipeline.exe validate
   Checks that each `Tools/*.yml` template parses and describes a usable tool (required fields
   present, a valid git link, a `.sln` solution path, and only known plugins). Exits non-zero if
   any template is invalid, so it works as a pre-flight check or a CI gate. Runs on any platform.
+
+- Emit machine-readable JSON for scripting or CI
+
+```
+OffensivePipeline.exe list --json
+OffensivePipeline.exe validate --json
+```
+
+  `--json` (on `list` and `validate`) writes a JSON document to stdout and nothing else — the
+  banner is suppressed and any warnings go to stderr — so the output pipes straight into `jq` or
+  a pipeline step. `list --json` never includes `authUser`/`authToken`. `validate --json` returns
+  `{ "valid": bool, "templateCount": n, "parseFailures": n, "invalid": [{ "name", "problems" }] }`
+  and still exits non-zero when a template is invalid.
 
 - Echo diagnostics to the console as well as to `log.txt`
 

@@ -1,3 +1,4 @@
+using OffensivePipeline.Output;
 using OffensivePipeline.Ui;
 
 namespace OffensivePipeline.Services;
@@ -18,4 +19,14 @@ internal sealed class ToolCatalog(IConsoleUi ui, YmlHelpers ymlHelpers)
             index++;
         }
     }
+
+    /// <summary>
+    /// The same listing as <see cref="List"/>, projected for <c>list --json</c>. Deliberately omits
+    /// <c>authUser</c> and <c>authToken</c> so a credentialed template never leaks its secret into
+    /// machine output.
+    /// </summary>
+    public IReadOnlyList<ToolListEntry> Collect() =>
+        ymlHelpers.ReadYmls()
+            .Select(t => new ToolListEntry(t.Name, t.Language, t.Description, t.GitLink, t.Plugins))
+            .ToList();
 }

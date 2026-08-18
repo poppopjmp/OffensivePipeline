@@ -1,4 +1,5 @@
 using OffensivePipeline.Config;
+using OffensivePipeline.Output;
 using OffensivePipeline.Modules;
 using OffensivePipeline.Ui;
 
@@ -16,13 +17,50 @@ namespace OffensivePipeline.Services;
 /// </remarks>
 internal sealed class TemplateValidator(IConsoleUi ui, PipelinePaths paths, YmlHelpers ymlHelpers, IModuleFactory moduleFactory)
 {
+    /// <summary>Runs validation and prints a human-readable report.</summary>
     /// <returns>The number of invalid templates. Zero means every template passed.</returns>
     public int Validate()
+    {
+        ValidationReport report = Run();
+
+        foreach (InvalidTemplate invalid in report.Invalid)
+        {
+            ui.Failure($"[INVALID] {invalid.Name}");
+            foreach (string problem in invalid.Problems)
+            {
+                ui.Plain($"\t- {problem}");
+            }
+        }
+
+        int total = report.Invalid.Count + report.ParseFailures;
+        if (total == 0)
+        {
+            ui.Success($"All {report.TemplateCount} templates are valid.");
+        }
+        else
+        {
+            if (report.ParseFailures > 0)
+            {
+                ui.Failure($"{report.ParseFailures} template(s) could not be parsed (see the errors above).");
+            }
+
+            ui.Failure($"{total} of {report.TemplateCount} templates are invalid.");
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// Runs validation and returns the structured result, for <c>validate --json</c>. ReadYmls
+    /// still reports parse failures through the UI (which <c>--json</c> routes to stderr), so the
+    /// count here matches what a human run prints.
+    /// </summary>
+    public ValidationReport Run()
     {
         if (!Directory.Exists(paths.YmlsPath))
         {
             ui.Failure($"Validate: templates folder not found <{paths.YmlsPath}>");
-            return 1;
+            return new ValidationReport(Valid: false, TemplateCount: 0, ParseFailures: 1, Invalid: []);
         }
 
         int filesOnDisk = Directory
@@ -34,39 +72,18 @@ internal sealed class TemplateValidator(IConsoleUi ui, PipelinePaths paths, YmlH
         int parseFailures = filesOnDisk - tools.Count;
 
         IReadOnlyList<string> known = moduleFactory.KnownModules;
-        int invalid = 0;
+        List<InvalidTemplate> invalid = [];
         foreach (ToolConfig tool in tools)
         {
             List<string> problems = Problems(tool, known);
-            if (problems.Count == 0)
+            if (problems.Count > 0)
             {
-                continue;
-            }
-
-            invalid++;
-            ui.Failure($"[INVALID] {tool.Name}");
-            foreach (string problem in problems)
-            {
-                ui.Plain($"\t- {problem}");
+                invalid.Add(new InvalidTemplate(tool.Name, problems));
             }
         }
 
-        int total = invalid + parseFailures;
-        if (total == 0)
-        {
-            ui.Success($"All {tools.Count} templates are valid.");
-        }
-        else
-        {
-            if (parseFailures > 0)
-            {
-                ui.Failure($"{parseFailures} template(s) could not be parsed (see the errors above).");
-            }
-
-            ui.Failure($"{total} of {filesOnDisk} templates are invalid.");
-        }
-
-        return total;
+        bool valid = invalid.Count == 0 && parseFailures == 0;
+        return new ValidationReport(valid, filesOnDisk, parseFailures, invalid);
     }
 
     /// <summary>The rules that make a template usable, matched to what the runtime actually needs.</summary>

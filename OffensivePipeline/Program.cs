@@ -88,13 +88,23 @@ internal sealed class Program
         IConsoleUi? ui = null;
         try
         {
+            // Detected from the raw args because the container - and the choice of where its UI
+            // writes - has to be built before System.CommandLine parses anything.
+            bool jsonMode = args.Any(a => string.Equals(a, "--json", StringComparison.Ordinal));
+
             PipelinePaths paths = PipelinePaths.ForCurrentInstallation();
             IConfigurationRoot configuration = CompositionRoot.BuildConfiguration(paths);
 
-            using ServiceProvider services = CompositionRoot.BuildServiceProvider(paths, configuration);
+            using ServiceProvider services = CompositionRoot.BuildServiceProvider(paths, configuration, jsonMode);
             ui = services.GetRequiredService<IConsoleUi>();
 
-            ShowBanner(ui);
+            // In --json mode stdout is reserved for the JSON document, so the banner is suppressed
+            // rather than pushed to stderr as noise. Warnings still reach stderr through the UI.
+            if (!jsonMode)
+            {
+                ShowBanner(ui);
+            }
+
             LegacyAppConfigNotice.Report(paths, configuration, ui);
 
             return Invoke(services, args);
@@ -177,11 +187,21 @@ internal sealed class Program
             Recursive = true,
         };
 
+        // Machine-readable output for the read-only verbs. stdout carries only the JSON document;
+        // the banner is suppressed and every human line goes to stderr (wired in Main and the
+        // composition root), so `list --json | jq` works.
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit machine-readable JSON (list and validate only).",
+            Recursive = true,
+        };
+
         // Given a description because the help layout always emits the "Description:" heading; an
         // empty one would leave a stray blank section above the usage line.
         var root = new RootCommand(
             "Download, build, obfuscate and generate shellcode from C# offensive tooling.");
         root.Options.Add(verboseOption);
+        root.Options.Add(jsonOption);
 
         // -?, -h and --help are already this option's default aliases, an exact match for the
         // HelpOption("-?|-h|--help") the previous CLI declared, so nothing has to be reconstructed.
@@ -210,7 +230,14 @@ internal sealed class Program
         list.SetAction(parseResult =>
         {
             ApplyVerbosity(parseResult);
-            services.GetRequiredService<ToolCatalog>().List();
+            ToolCatalog catalog = services.GetRequiredService<ToolCatalog>();
+            if (parseResult.GetValue(jsonOption))
+            {
+                Output.JsonOutput.Write(catalog.Collect());
+                return 0;
+            }
+
+            catalog.List();
             Console.WriteLine();
             return 0;
         });
@@ -260,7 +287,15 @@ internal sealed class Program
         validate.SetAction(parseResult =>
         {
             ApplyVerbosity(parseResult);
-            int invalid = services.GetRequiredService<TemplateValidator>().Validate();
+            TemplateValidator validator = services.GetRequiredService<TemplateValidator>();
+            if (parseResult.GetValue(jsonOption))
+            {
+                Output.ValidationReport report = validator.Run();
+                Output.JsonOutput.Write(report);
+                return report.Valid ? Success : Failure;
+            }
+
+            int invalid = validator.Validate();
             Console.WriteLine();
             return invalid == 0 ? Success : Failure;
         });

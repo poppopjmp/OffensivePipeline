@@ -1,7 +1,7 @@
 namespace OffensivePipeline.Ui;
 
 /// <summary>
-/// Writes the operator-facing output to the system console.
+/// Writes the operator-facing output to a console stream.
 /// </summary>
 /// <remarks>
 /// The colour of every method is the colour the equivalent <c>LogHelpers.PrintX</c> call used, so
@@ -15,14 +15,37 @@ namespace OffensivePipeline.Ui;
 ///   <item><term>Detail</term><description>Gray (was <c>PrintGray</c>)</description></item>
 ///   <item><term>Plain / Banner</term><description>default (was a bare <c>Console.WriteLine</c>)</description></item>
 /// </list>
+/// The target stream is a constructor parameter so <c>--json</c> can send all of this to stderr and
+/// keep stdout for the JSON document alone. Colour is applied through the process-wide
+/// <see cref="Console"/> colour, so it is only enabled when the target is the real, unredirected
+/// stdout.
 /// </remarks>
 public sealed class ConsoleUi : IConsoleUi
 {
-    public void Banner(string text) => Console.WriteLine(text);
+    private readonly TextWriter _writer;
+    private readonly bool _colorize;
 
-    public void Plain(string text) => Console.WriteLine(text);
+    /// <summary>The default: writes to stdout, coloured unless stdout is redirected.</summary>
+    public ConsoleUi()
+        : this(Console.Out, colorize: !Console.IsOutputRedirected)
+    {
+    }
 
-    public void Blank() => Console.WriteLine();
+    public ConsoleUi(TextWriter writer, bool colorize)
+    {
+        _writer = writer;
+        _colorize = colorize;
+    }
+
+    /// <summary>A UI that writes everything to stderr, so stdout is free for machine output.</summary>
+    public static ConsoleUi ToStandardError() =>
+        new(Console.Error, colorize: !Console.IsErrorRedirected);
+
+    public void Banner(string text) => _writer.WriteLine(text);
+
+    public void Plain(string text) => _writer.WriteLine(text);
+
+    public void Blank() => _writer.WriteLine();
 
     public void Heading(string text) => Write(ConsoleColor.Yellow, text);
 
@@ -42,18 +65,18 @@ public sealed class ConsoleUi : IConsoleUi
     /// Colours a single line, leaving the console exactly as it was found. Colour is skipped when
     /// output is redirected, so a piped or captured run produces clean text.
     /// </summary>
-    private static void Write(ConsoleColor color, string text)
+    private void Write(ConsoleColor color, string text)
     {
-        if (Console.IsOutputRedirected)
+        if (!_colorize)
         {
-            Console.WriteLine(text);
+            _writer.WriteLine(text);
             return;
         }
 
         Console.ForegroundColor = color;
         try
         {
-            Console.WriteLine(text);
+            _writer.WriteLine(text);
         }
         finally
         {
