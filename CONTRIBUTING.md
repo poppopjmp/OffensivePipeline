@@ -5,8 +5,9 @@ welcome: bug fixes, new plugins, new tool templates, and documentation.
 
 ## Getting started
 
-1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). The exact
-   version is pinned by `global.json`, so the SDK you get is the SDK CI uses.
+1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). `global.json`
+   requests `10.0.100` with `rollForward: latestFeature`, so any installed 10.0.1xx SDK is
+   accepted — you do not need that exact build.
 2. Clone the repository. The bundled `DonutCore` package resolves from `ExternalResources/`
    via the repository's `nuget.config`, which also pins that package ID to the local folder
    feed — no NuGet feed setup, and no way for restore to pick up a same-named package from

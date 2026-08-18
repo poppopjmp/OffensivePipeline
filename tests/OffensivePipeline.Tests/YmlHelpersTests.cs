@@ -285,4 +285,25 @@ public class YmlHelpersTests
         Assert.DoesNotContain(
             Path.DirectorySeparatorChar == '/' ? '\\' : '/', tool.SolutionPath);
     }
+
+    [Fact]
+    public void Templates_In_Subfolders_Are_Discovered()
+    {
+        using var workspace = new TempWorkspace();
+        Directory.CreateDirectory(workspace.Paths.YmlsPath);
+        File.WriteAllText(
+            Path.Combine(workspace.Paths.YmlsPath, "TopLevel.yml"),
+            TestFactory.Template("TopLevel"));
+
+        string nested = Path.Combine(workspace.Paths.YmlsPath, "vendor");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "Nested.yml"), TestFactory.Template("Nested"));
+
+        var ui = new RecordingConsoleUi();
+        IReadOnlyList<ToolConfig> tools = TestFactory.Yml(workspace.Paths, ui).ReadYmls();
+
+        // Discovery must match the csproj copy glob (Tools/**/*.yml), which ships nested files too.
+        Assert.Contains(tools, t => t.Name == "TopLevel");
+        Assert.Contains(tools, t => t.Name == "Nested");
+    }
 }

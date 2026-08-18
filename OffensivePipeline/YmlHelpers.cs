@@ -31,8 +31,10 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
         }
 
         // Sorted so listing order is stable and identical on every platform.
+        // Recursive to match the csproj copy glob (Tools/**/*.yml) and the CI payload check;
+        // a template in a subfolder would otherwise ship and be counted yet never be listed.
         IEnumerable<string> toolFiles = Directory
-            .GetFiles(paths.YmlsPath, "*.yml")
+            .GetFiles(paths.YmlsPath, "*.yml", SearchOption.AllDirectories)
             .Order(StringComparer.OrdinalIgnoreCase);
 
         if (ymlName is not null)
