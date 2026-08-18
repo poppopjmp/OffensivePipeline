@@ -101,6 +101,7 @@ internal static class CompositionRoot
         services.AddSingleton<ToolCatalog>();
         services.AddSingleton<WorkspaceCleaner>();
         services.AddSingleton<PipelineRunner>();
+        services.AddSingleton<TemplateValidator>();
 
         return services.BuildServiceProvider();
     }

@@ -306,4 +306,39 @@ public class YmlHelpersTests
         Assert.Contains(tools, t => t.Name == "TopLevel");
         Assert.Contains(tools, t => t.Name == "Nested");
     }
+
+    [Fact]
+    public void A_Malformed_Template_Is_Skipped_Not_Fatal()
+    {
+        using var workspace = new TempWorkspace();
+        Directory.CreateDirectory(workspace.Paths.YmlsPath);
+        File.WriteAllText(
+            Path.Combine(workspace.Paths.YmlsPath, "Good.yml"), TestFactory.Template("Good"));
+        File.WriteAllText(
+            Path.Combine(workspace.Paths.YmlsPath, "Broken.yml"), "tool:\n  - name: [unterminated");
+
+        var ui = new RecordingConsoleUi();
+        // A single malformed template used to throw out of yaml.Load and abort the whole run,
+        // taking list/all/validate down with it. It must now be reported and skipped.
+        IReadOnlyList<ToolConfig> tools = TestFactory.Yml(workspace.Paths, ui).ReadYmls();
+
+        Assert.Contains(tools, t => t.Name == "Good");
+        Assert.DoesNotContain(tools, t => t.Name == "Broken");
+        Assert.NotEmpty(ui.TextOf(UiChannel.Failure));
+    }
+
+    [Fact]
+    public void An_Empty_Template_File_Is_Skipped_Not_Fatal()
+    {
+        using var workspace = new TempWorkspace();
+        Directory.CreateDirectory(workspace.Paths.YmlsPath);
+        File.WriteAllText(
+            Path.Combine(workspace.Paths.YmlsPath, "Good.yml"), TestFactory.Template("Good"));
+        File.WriteAllText(Path.Combine(workspace.Paths.YmlsPath, "Empty.yml"), string.Empty);
+
+        var ui = new RecordingConsoleUi();
+        IReadOnlyList<ToolConfig> tools = TestFactory.Yml(workspace.Paths, ui).ReadYmls();
+
+        Assert.Contains(tools, t => t.Name == "Good");
+    }
 }

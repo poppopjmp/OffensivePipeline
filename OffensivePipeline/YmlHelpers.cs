@@ -63,11 +63,32 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
 
     private void ParseToolFile(string toolFile, string? overrideArguments, List<ToolConfig> tools)
     {
-        var yaml = new YamlStream();
-        yaml.Load(new StringReader(File.ReadAllText(toolFile)));
+        YamlSequenceNode items;
+        try
+        {
+            // Everything up to the item loop can throw on a malformed file: yaml.Load on a syntax
+            // error, Documents[0] on an empty file, and the casts / 'tool' lookup on an unexpected
+            // shape. A single bad template must be reported and skipped, not abort the whole run -
+            // otherwise one typo makes 'list', 'all' and 'validate' fail for every other template.
+            var yaml = new YamlStream();
+            yaml.Load(new StringReader(File.ReadAllText(toolFile)));
 
-        var mapping = (YamlMappingNode)yaml.Documents[0].RootNode;
-        var items = (YamlSequenceNode)mapping.Children[new YamlScalarNode("tool")];
+            if (yaml.Documents.Count == 0)
+            {
+                ui.Failure($"ReadYmls: <{toolFile}> - the file is empty");
+                logger.Error($"ReadYmls: {toolFile} is empty");
+                return;
+            }
+
+            var mapping = (YamlMappingNode)yaml.Documents[0].RootNode;
+            items = (YamlSequenceNode)mapping.Children[new YamlScalarNode("tool")];
+        }
+        catch (Exception e)
+        {
+            ui.Failure($"ReadYmls: <{toolFile}> - {e.Message}");
+            logger.Error(e, $"ReadYmls: failed to parse {toolFile}");
+            return;
+        }
 
         foreach (YamlMappingNode item in items)
         {
@@ -89,7 +110,7 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
             }
             catch (Exception e)
             {
-                ui.Failure($"ReadYmls: <{toolFile}> - {e}");
+                ui.Failure($"ReadYmls: <{toolFile}> - {e.Message}");
                 logger.Error(e, $"ReadYmls: failed to parse {toolFile}");
             }
         }

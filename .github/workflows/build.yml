@@ -87,9 +87,12 @@ jobs:
           grep -q '@aetsu' list.txt
 
           dotnet "$app" --help > help.txt
-          verbs=$(grep -cE '^[[:space:]]+(list|all|t <tool>|clean)[[:space:]]' help.txt || true)
+          verbs=$(grep -cE '^[[:space:]]+(list|all|t <tool>|clean|validate)[[:space:]]' help.txt || true)
           echo "help lists $verbs verbs"
-          test "$verbs" -eq 4
+          test "$verbs" -eq 5
+
+          # Every shipped template must pass validation on both platforms.
+          dotnet "$app" validate
 
       - name: Publish (win-x64)
         if: matrix.os == 'windows-latest'

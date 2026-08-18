@@ -90,11 +90,18 @@ with are all different. **Read the breaking changes before upgrading an existing
 - The reflection plugin lookup used `.First(...)`, which throws, behind an unreachable null
   check; an unknown plugin name in a template now reports which template it came from,
   before any work starts.
+- A single malformed or empty `Tools/*.yml` template aborted the entire tool: `yaml.Load` and
+  the structural casts ran outside any `try`, so one syntax error took down `list`, `all` and
+  `validate` for every other template. A bad template is now reported and skipped.
 
 ### Added
 
-- **First test suite**: `tests/OffensivePipeline.Tests`, xUnit v3, 267 tests, all runnable on
-  Linux with no network. Includes a per-template theory over all 79 shipped YAML files, golden
+- **New `validate` verb.** Checks every `Tools/*.yml` template - required fields, an http(s) or
+  local git link, a `.sln` solution path, and only known plugin names - without cloning or
+  building, on any platform. Exits non-zero on the first invalid template, so it doubles as a
+  pre-flight check and a CI gate.
+- **First test suite**: `tests/OffensivePipeline.Tests`, xUnit v3, all runnable on Linux with no
+  network. Includes a per-template theory over all 79 shipped YAML files, golden
   tests for the new `.sln` reader, text-transform tests for `RandomGuid`/`RandomAssemblyInfo`,
   assertions on the exact generated `buildSolution.bat` and `.crproj` content via a recording
   process-runner fake, configuration-precedence tests, and parse-only CLI tests encoding the

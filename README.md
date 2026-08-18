@@ -53,6 +53,9 @@ A common use of OffensivePipeline is to download a tool from a Git repository, r
 - Command line migrated to `System.CommandLine`; same verbs, plus `--version` and `--verbose`
 - `t <tool>` is case-insensitive and no longer crashes on an unknown tool; `list` is sorted
 - New tool templates are picked up automatically — no more editing the csproj
+- New `validate` verb checks every template (fields, git link, plugins) without building, so a
+  broken template is caught up front instead of mid-run; a malformed template no longer aborts
+  the whole tool
 
 ## What's new in version 2.1
 
@@ -114,6 +117,16 @@ OffensivePipeline.exe clean
   Removes the `Git/` and `Output/` working directories and deletes `log.txt`, then recreates the
   empty working directories.
 
+- Validate every tool template without cloning or building anything
+
+```
+OffensivePipeline.exe validate
+```
+
+  Checks that each `Tools/*.yml` template parses and describes a usable tool (required fields
+  present, a valid git link, a `.sln` solution path, and only known plugins). Exits non-zero if
+  any template is invalid, so it works as a pre-flight check or a CI gate. Runs on any platform.
+
 - Echo diagnostics to the console as well as to `log.txt`
 
 ```
@@ -135,6 +148,8 @@ OffensivePipeline.exe --version
 | --- | --- |
 | no arguments, `-?` / `-h` / `--help`, `--version` | 0 |
 | `list`, `clean` | 0 |
+| `validate` — every template valid | 0 |
+| `validate` — any template invalid | 1 |
 | `all` / `t <tool>` — everything succeeded | 0 |
 | `all` / `t <tool>` — any tool or module failed | 1 |
 | `t` with no tool name, unknown tool, unknown verb | 1 |

@@ -32,10 +32,10 @@ public class CommandLineTests
     }
 
     [Fact]
-    public void The_Four_Verbs_Are_Present_And_Nothing_Else()
+    public void The_Verbs_Are_Present_And_Nothing_Else()
     {
         Assert.Equal(
-            ["all", "clean", "list", "t"],
+            ["all", "clean", "list", "t", "validate"],
             Root().Subcommands.Select(c => c.Name).Order(StringComparer.Ordinal));
     }
 
@@ -43,6 +43,7 @@ public class CommandLineTests
     [InlineData("list")]
     [InlineData("all")]
     [InlineData("clean")]
+    [InlineData("validate")]
     public void A_Bare_Verb_Parses_Without_Error(string verb) =>
         Assert.Empty(Root().Parse(verb).Errors);
 

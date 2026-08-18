@@ -26,6 +26,8 @@ internal sealed class Program
             OffensivePipeline.exe t seatbelt [-a/--args] [args]
          - Load all tools:
             OffensivePipeline.exe all
+         - Validate every template without building:
+            OffensivePipeline.exe validate
 
         """.ReplaceLineEndings("\n");
 
@@ -253,6 +255,16 @@ internal sealed class Program
             return Success;
         });
         root.Subcommands.Add(clean);
+
+        var validate = new Command("validate", "Validate all tool templates without building");
+        validate.SetAction(parseResult =>
+        {
+            ApplyVerbosity(parseResult);
+            int invalid = services.GetRequiredService<TemplateValidator>().Validate();
+            Console.WriteLine();
+            return invalid == 0 ? Success : Failure;
+        });
+        root.Subcommands.Add(validate);
 
         return root;
     }
