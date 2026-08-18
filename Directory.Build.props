@@ -12,6 +12,10 @@
     <DebugType>embedded</DebugType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <!-- Reproducible restore: the resolved graph is captured in packages.lock.json, and CI
+         restores in locked mode so any drift between the lock file and the central versions fails
+         the build instead of silently resolving something new. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>

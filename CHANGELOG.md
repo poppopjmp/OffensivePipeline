@@ -111,6 +111,10 @@ with are all different. **Read the breaking changes before upgrading an existing
   assertions on the exact generated `buildSolution.bat` and `.crproj` content via a recording
   process-runner fake, configuration-precedence tests, and parse-only CLI tests encoding the
   exit-code matrix. Run with `dotnet test --solution OffensivePipeline.sln -c Release`.
+- **Reproducible restore.** `RestorePackagesWithLockFile` is on, the resolved graph is committed
+  as `packages.lock.json`, and CI restores in locked mode. A dependency can no longer change
+  without the lock file changing in the same reviewed commit; a drift fails the build with
+  `NU1004`.
 - **Dependency injection and a real composition root.** A plain `ServiceCollection` (no
   generic host) wires `IConsoleUi`, `ILogger<T>`, `PipelinePaths`, `PipelineOptions`,
   `IProcessRunner`, `IResourceDownloader` and `IGitClient`. Modules are resolved by keyed DI

@@ -47,20 +47,21 @@ jobs:
         with:
           global-json-file: global.json
 
-      # Central package management keeps every version in Directory.Packages.props, so hashing
-      # that plus the project files is an exact key for the restore graph. setup-dotnet's own
-      # cache option is not used because it requires packages.lock.json, which this repository
-      # deliberately does not carry yet.
+      # The committed packages.lock.json files pin the exact restore graph, so they are the precise
+      # cache key: the same lock file always restores the same packages.
       - name: Cache NuGet packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', 'nuget.config', 'global.json', '**/*.csproj') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'nuget.config', 'global.json') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # Locked mode fails the restore if the lock file and the central package versions have
+      # drifted apart, so a dependency can never change without the lock file changing in the
+      # same commit and being reviewed.
       - name: Restore
-        run: dotnet restore OffensivePipeline.sln
+        run: dotnet restore OffensivePipeline.sln --locked-mode
 
       - name: Build
         run: dotnet build OffensivePipeline.sln -c Release --no-restore

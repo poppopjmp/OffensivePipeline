@@ -25,6 +25,16 @@ welcome: bug fixes, new plugins, new tool templates, and documentation.
 The build must stay warning-free — analyzers run at `latest-Recommended`, and CI treats the
 NuGet audit codes (`NU1901`-`NU1904`) as errors.
 
+Dependency versions are centralised in `Directory.Packages.props`, and the resolved graph is
+pinned in the committed `packages.lock.json` files. CI restores in locked mode, so **if you change
+a package version you must regenerate the lock files in the same commit**:
+
+```bash
+dotnet restore OffensivePipeline.sln --force-evaluate
+```
+
+A version change without the matching lock-file update fails CI with `NU1004`.
+
 > Note: the **build/obfuscation pipeline itself runs on Windows** (it shells out to
 > `cmd.exe`, MSBuild Build Tools and the ConfuserEx CLI). The project compiles and the test
 > suite runs on any platform — CI builds and tests on both `windows-latest` and
