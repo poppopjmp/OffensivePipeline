@@ -230,5 +230,7 @@ public class DiagnosticsTests
 
     /// <inheritdoc cref="ReadSharedText"/>
     private static string[] ReadSharedLines(string path) =>
-        ReadSharedText(path).Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        ReadSharedText(path)
+            .ReplaceLineEndings("\n")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
 }

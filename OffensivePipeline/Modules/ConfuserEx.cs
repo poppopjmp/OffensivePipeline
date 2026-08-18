@@ -136,27 +136,15 @@ internal sealed class ConfuserEx(
     {
         try
         {
-            string referenceRoot = Path.GetDirectoryName(context.Tool.SolutionPath)
+            // Resolve against the absolute solution path, not the template's relative
+            // solutionPath. The relative value resolves against the process working directory,
+            // so no reference was ever found and the obfuscated output shipped without its
+            // dependencies. BuildCsharp already did this correctly.
+            string referenceRoot = Path.GetDirectoryName(context.SolutionPath)
                 ?? throw new InvalidOperationException(
-                    $"{Name}: cannot determine the folder of {context.Tool.SolutionPath}.");
+                    $"{Name}: cannot determine the folder of {context.SolutionPath}.");
 
-            foreach (string projectPath in SolutionFileReader.GetProjectPaths(context.SolutionPath))
-            {
-                if (!File.Exists(projectPath))
-                {
-                    continue;
-                }
-
-                foreach (string reference in ProjectHintPaths.Read(projectPath))
-                {
-                    string referenceFile = reference.Replace(@"..\", string.Empty, StringComparison.Ordinal);
-                    string sourceFile = Path.Combine(referenceRoot, referenceFile);
-                    if (File.Exists(sourceFile))
-                    {
-                        File.Copy(sourceFile, Path.Combine(outputPath, Path.GetFileName(referenceFile)), true);
-                    }
-                }
-            }
+            ProjectHintPaths.CopyReferencedAssemblies(context.SolutionPath, referenceRoot, outputPath);
         }
         catch (Exception e)
         {

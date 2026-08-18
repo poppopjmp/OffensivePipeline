@@ -25,4 +25,40 @@ internal static class ProjectHintPaths
             .Elements(MsBuild + "HintPath")
             .Select(refElem => refElem.Value);
     }
+
+    /// <summary>
+    /// Copies every third-party assembly referenced by a solution's projects next to the build
+    /// output, so an obfuscated or relocated binary still has its dependencies beside it.
+    /// </summary>
+    /// <param name="solutionPath">Absolute path to the <c>.sln</c>.</param>
+    /// <param name="referenceRoot">
+    /// Absolute directory that <c>HintPath</c> values are resolved against - normally the folder
+    /// holding the solution. It must be absolute: a relative root silently resolves against the
+    /// process working directory, so nothing is found and no dependency is copied.
+    /// </param>
+    /// <param name="outputPath">Directory to copy the assemblies into.</param>
+    public static void CopyReferencedAssemblies(
+        string solutionPath, string referenceRoot, string outputPath)
+    {
+        foreach (string projectPath in SolutionFileReader.GetProjectPaths(solutionPath))
+        {
+            if (!File.Exists(projectPath))
+            {
+                continue;
+            }
+
+            foreach (string reference in Read(projectPath))
+            {
+                string referenceFile = reference
+                    .Replace(@"..\", string.Empty, StringComparison.Ordinal)
+                    .Replace('\\', Path.DirectorySeparatorChar);
+
+                string sourceFile = Path.Combine(referenceRoot, referenceFile);
+                if (File.Exists(sourceFile))
+                {
+                    File.Copy(sourceFile, Path.Combine(outputPath, Path.GetFileName(referenceFile)), true);
+                }
+            }
+        }
+    }
 }

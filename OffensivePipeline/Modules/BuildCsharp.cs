@@ -123,33 +123,12 @@ internal sealed class BuildCsharp(
             logger.Info($"Build completed for {solutionPath}");
 
             // Gets all references to the project to obfuscate it with confuser
-            CopyProjectReferences(solutionPath, solutionDir, outputPath);
+            ProjectHintPaths.CopyReferencedAssemblies(solutionPath, solutionDir, outputPath);
         }
 
         message = $"\t\t[+] Output folder: {outputPath}";
         ui.Success(message);
         logger.Info($"Output folder: {outputPath}");
         return new ModuleResult { Name = Name, OutputPath = outputPath };
-    }
-
-    private static void CopyProjectReferences(string solutionPath, string referenceRoot, string outputPath)
-    {
-        foreach (string projectPath in SolutionFileReader.GetProjectPaths(solutionPath))
-        {
-            if (!File.Exists(projectPath))
-            {
-                continue;
-            }
-
-            foreach (string reference in ProjectHintPaths.Read(projectPath))
-            {
-                string referenceFile = reference.Replace(@"..\", string.Empty, StringComparison.Ordinal);
-                string sourceFile = Path.Combine(referenceRoot, referenceFile);
-                if (File.Exists(sourceFile))
-                {
-                    File.Copy(sourceFile, Path.Combine(outputPath, Path.GetFileName(referenceFile)), true);
-                }
-            }
-        }
     }
 }

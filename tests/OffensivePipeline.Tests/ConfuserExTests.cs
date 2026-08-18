@@ -233,4 +233,41 @@ public class ConfuserExTests
         using Stream entry = archive.CreateEntry(entryName).Open();
         entry.Write(System.Text.Encoding.UTF8.GetBytes(content));
     }
+
+    /// <summary>
+    /// Referenced assemblies must be resolved against the tool's checkout. SolveDependences used
+    /// the template's <em>relative</em> solutionPath as the reference root, so HintPaths resolved
+    /// against the process working directory, nothing was ever found, and the obfuscated output
+    /// shipped without the third-party assemblies it needs - silently, because a missing
+    /// reference is simply skipped.
+    /// </summary>
+    [Fact]
+    public void Referenced_Assemblies_Are_Resolved_Against_The_Checkout_And_Copied()
+    {
+        using var workspace = new TempWorkspace();
+        ModuleContext context = Arrange(workspace, out string previousFolder);
+
+        workspace.File("Git/MyTool/MyTool.sln", TestFactory.Solution("MyTool", "MyTool.csproj"));
+        workspace.File("Git/MyTool/MyTool.csproj", """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+              <ItemGroup>
+                <Reference Include="Vendor.Native">
+                  <HintPath>lib\Vendor.Native.dll</HintPath>
+                </Reference>
+              </ItemGroup>
+            </Project>
+            """);
+        workspace.File("Git/MyTool/lib/Vendor.Native.dll", "native bytes");
+
+        Modules.ConfuserEx module = Module(
+            workspace, new RecordingConsoleUi(), new RecordingProcessRunner(), new FakeResourceDownloader());
+        module.CheckStart(context);
+
+        module.Run(context);
+
+        string copied = Path.Combine(previousFolder, "ConfuserEx", "Vendor.Native.dll");
+        Assert.True(File.Exists(copied), $"expected the HintPath reference to be copied to {copied}");
+        Assert.Equal("native bytes", File.ReadAllText(copied));
+    }
 }
