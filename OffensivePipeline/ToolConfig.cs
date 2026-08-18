@@ -15,7 +15,28 @@ public sealed record ToolConfig
 
     public required string GitLink { get; init; }
 
-    public required string SolutionPath { get; init; }
+    /// <summary>
+    /// Path to the tool's solution file, relative to its clone directory.
+    /// </summary>
+    /// <remarks>
+    /// Every shipped template spells this with Windows separators (<c>Seatbelt\Seatbelt.sln</c>).
+    /// Normalising on the way in means <see cref="Path.Combine(string, string)"/> yields a real
+    /// path on every platform, instead of a single file literally named
+    /// <c>Seatbelt\Seatbelt.sln</c> on Linux, and keeps generated scripts free of paths that mix
+    /// <c>\</c> and <c>/</c>.
+    /// </remarks>
+    public required string SolutionPath
+    {
+        get => _solutionPath;
+        init => _solutionPath = NormalizeSeparators(value);
+    }
+
+    private readonly string _solutionPath = string.Empty;
+
+    /// <summary>Rewrites either separator character to the one this platform uses.</summary>
+    internal static string NormalizeSeparators(string path) =>
+        path.Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
 
     public required string Language { get; init; }
 

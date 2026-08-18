@@ -40,7 +40,8 @@ public class YmlHelpersTests
         Assert.Equal("Example", tool.Name);
         Assert.Equal("Does a thing.", tool.Description);
         Assert.Equal("https://github.com/example/example", tool.GitLink);
-        Assert.Equal(@"Example\Example.sln", tool.SolutionPath);
+        // Separators are normalised to the running platform - see ToolConfig.SolutionPath.
+        Assert.Equal(Path.Combine("Example", "Example.sln"), tool.SolutionPath);
         Assert.Equal("c#", tool.Language);
         Assert.Equal(["RandomGuid", "BuildCsharp"], tool.Plugins);
         Assert.Equal("someone", tool.AuthUser);
@@ -265,5 +266,23 @@ public class YmlHelpersTests
 
         Assert.Equal(["Working"], tools.Select(t => t.Name));
         Assert.Contains("ReadYmls:", Assert.Single(ui.TextOf(UiChannel.Failure)), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(@"Example\Example.sln")]
+    [InlineData("Example/Example.sln")]
+    public void The_Solution_Path_Separator_Is_Normalised_To_The_Platform(string declared)
+    {
+        using TempWorkspace workspace = WorkspaceWith(("Example", TestFactory.Template(
+            name: "Example", solutionPath: declared)));
+
+        var ui = new RecordingConsoleUi();
+        ToolConfig tool = Assert.Single(TestFactory.Yml(workspace.Paths, ui).ReadYmls());
+
+        // Every shipped template spells this the Windows way. Combining that raw value on Linux
+        // produced one file literally named "Example\Example.sln" instead of a real path.
+        Assert.Equal(Path.Combine("Example", "Example.sln"), tool.SolutionPath);
+        Assert.DoesNotContain(
+            Path.DirectorySeparatorChar == '/' ? '\\' : '/', tool.SolutionPath);
     }
 }

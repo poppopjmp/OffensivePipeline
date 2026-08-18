@@ -18,7 +18,7 @@ internal sealed class Program
     /// reproduced verbatim; System.CommandLine has no direct equivalent, so
     /// <see cref="ExtendedHelpAction"/> appends it to the root command's help.
     /// </summary>
-    private const string ExamplesHelpText = """
+    private static readonly string ExamplesHelpText = """
         Examples:
          - List all tools:
             OffensivePipeline.exe list
@@ -27,7 +27,7 @@ internal sealed class Program
          - Load all tools:
             OffensivePipeline.exe all
 
-        """;
+        """.ReplaceLineEndings("\n");
 
     /// <summary>
     /// Reads the version the assembly was actually built with, so the banner can never disagree

@@ -18,7 +18,7 @@ public class DiagnosticsTests
             provider.CreateLogger("OffensivePipeline.Modules.BuildCsharp").Info("Build completed");
         }
 
-        string line = Assert.Single(File.ReadAllLines(workspace.Paths.LogFile));
+        string line = Assert.Single(ReadSharedLines(workspace.Paths.LogFile));
         string[] parts = line.Split(" -- ", 2);
 
         Assert.Equal("Build completed", parts[1]);
@@ -44,7 +44,7 @@ public class DiagnosticsTests
             logger.Error(new InvalidOperationException("the cause"), "an error line");
         }
 
-        string[] lines = File.ReadAllLines(workspace.Paths.LogFile);
+        string[] lines = ReadSharedLines(workspace.Paths.LogFile);
 
         Assert.Equal(3, lines.Length);
         Assert.Contains("[Information]", lines[0], StringComparison.Ordinal);
@@ -81,7 +81,7 @@ public class DiagnosticsTests
 
         logger.Warn("after");
 
-        string content = File.ReadAllText(workspace.Paths.LogFile);
+        string content = ReadSharedText(workspace.Paths.LogFile);
         Assert.Contains("after", content, StringComparison.Ordinal);
         Assert.DoesNotContain("before", content, StringComparison.Ordinal);
     }
@@ -213,4 +213,22 @@ public class DiagnosticsTests
             Environment.SetEnvironmentVariable(ConsoleVerbosity.EnvironmentVariable, original);
         }
     }
+
+    /// <summary>
+    /// Reads a log file that <see cref="FileLoggerProvider"/> may still hold open for writing.
+    /// <c>File.ReadAllText</c> asks for <see cref="FileShare.Read"/>, which does not tolerate the
+    /// provider's open write handle, so on Windows it throws a sharing violation while on Linux it
+    /// happens to succeed.
+    /// </summary>
+    private static string ReadSharedText(string path)
+    {
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    /// <inheritdoc cref="ReadSharedText"/>
+    private static string[] ReadSharedLines(string path) =>
+        ReadSharedText(path).Split('\n', StringSplitOptions.RemoveEmptyEntries);
 }
