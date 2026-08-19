@@ -12,9 +12,15 @@ public sealed record ToolListEntry(
     IReadOnlyList<string> Plugins);
 
 /// <summary>The result of validating every template, as returned by <c>validate --json</c>.</summary>
+/// <param name="TemplateCount">Number of template <em>files</em> on disk.</param>
+/// <param name="ToolCount">
+/// Number of tools successfully parsed. This is not the same as <paramref name="TemplateCount"/>:
+/// a template legally declares a sequence, so one file can define several tools.
+/// </param>
 public sealed record ValidationReport(
     bool Valid,
     int TemplateCount,
+    int ToolCount,
     int ParseFailures,
     IReadOnlyList<InvalidTemplate> Invalid);
 

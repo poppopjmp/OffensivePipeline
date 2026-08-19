@@ -1,4 +1,8 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.Options;
 using OffensivePipeline.Output;
 using OffensivePipeline.Services;
 using OffensivePipeline.Tests.TestSupport;
@@ -81,5 +85,37 @@ public class JsonOutputTests
         string json = JsonOutput.Serialize(report);
         using JsonDocument doc = JsonDocument.Parse(json);
         Assert.False(doc.RootElement.GetProperty("valid").GetBoolean());
+    }
+
+    /// <summary>
+    /// The console *logger* must also go to stderr in --json mode. Redirecting IConsoleUi alone was
+    /// not enough: ILogger's console provider writes to Console.Out independently, so
+    /// 'list --json --verbose' interleaved log lines with the JSON document and stdout stopped
+    /// parsing - exactly when someone added --verbose to debug a failing run.
+    /// </summary>
+    [Fact]
+    public void Json_Mode_Sends_Console_Log_Output_To_Standard_Error()
+    {
+        using var workspace = new TempWorkspace();
+        using ServiceProvider services = CompositionRoot.BuildServiceProvider(
+            workspace.Paths, CompositionRoot.BuildConfiguration(workspace.Paths), jsonMode: true);
+
+        ConsoleLoggerOptions options =
+            services.GetRequiredService<IOptions<ConsoleLoggerOptions>>().Value;
+
+        Assert.Equal(LogLevel.Trace, options.LogToStandardErrorThreshold);
+    }
+
+    [Fact]
+    public void Human_Mode_Leaves_Console_Log_Output_On_Standard_Output()
+    {
+        using var workspace = new TempWorkspace();
+        using ServiceProvider services = CompositionRoot.BuildServiceProvider(
+            workspace.Paths, CompositionRoot.BuildConfiguration(workspace.Paths), jsonMode: false);
+
+        ConsoleLoggerOptions options =
+            services.GetRequiredService<IOptions<ConsoleLoggerOptions>>().Value;
+
+        Assert.NotEqual(LogLevel.Trace, options.LogToStandardErrorThreshold);
     }
 }

@@ -10,6 +10,11 @@
     <Description>Download, build, obfuscate and generate shellcode from C# offensive tooling in a single automated pipeline.</Description>
     <RepositoryUrl>https://github.com/poppopjmp/offensivepipeline</RepositoryUrl>
     <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <!-- Declared so the committed packages.lock.json always contains the win-x64 graph. Without
+         this the lock file is RID-agnostic, and the RID publish that CI and release.yml run does
+         its own restore that appends a net10.0/win-x64 section, dirtying a committed file and
+         breaking the next locked-mode restore with NU1004. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>

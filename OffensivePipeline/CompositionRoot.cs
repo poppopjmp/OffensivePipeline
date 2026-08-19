@@ -73,7 +73,20 @@ internal static class CompositionRoot
             // Diagnostics always go to log.txt. They reach the console only when the operator asks,
             // because they would otherwise bury the progress tree the pipeline prints.
             builder.AddProvider(fileLoggerProvider);
-            builder.AddConsole();
+
+            // In --json mode every console log line must go to stderr as well, otherwise
+            // 'list --json --verbose' interleaves logger output with the JSON document and stdout
+            // stops parsing. Redirecting IConsoleUi alone is not enough: the console logger writes
+            // to Console.Out independently of it.
+            if (jsonMode)
+            {
+                builder.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+            }
+            else
+            {
+                builder.AddConsole();
+            }
+
             builder.AddFilter<ConsoleLoggerProvider>((_, _) => verbosity.Verbose);
         });
 

@@ -19,8 +19,21 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
     /// <param name="overrideArguments">
     /// When not null, replaces the <c>toolArguments</c> value declared by the template.
     /// </param>
-    public List<ToolConfig> ReadYmls(string? ymlName = null, string? overrideArguments = null)
+    public List<ToolConfig> ReadYmls(string? ymlName = null, string? overrideArguments = null) =>
+        ReadYmls(out _, ymlName, overrideArguments);
+
+    /// <summary>
+    /// Reads templates and reports how many template <em>files</em> could not be parsed.
+    /// </summary>
+    /// <param name="failedFiles">
+    /// Count of files that produced no tool because they were malformed. Callers must not infer
+    /// this by subtracting the tool count from the file count: a template legally declares a
+    /// <em>sequence</em> of tools, so one file can yield several and the subtraction goes negative.
+    /// </param>
+    public List<ToolConfig> ReadYmls(
+        out int failedFiles, string? ymlName = null, string? overrideArguments = null)
     {
+        failedFiles = 0;
         List<ToolConfig> tools = [];
 
         if (!Directory.Exists(paths.YmlsPath))
@@ -55,13 +68,17 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
 
         foreach (string toolFile in toolFiles)
         {
-            ParseToolFile(toolFile, overrideArguments, tools);
+            if (!ParseToolFile(toolFile, overrideArguments, tools))
+            {
+                failedFiles++;
+            }
         }
 
         return tools;
     }
 
-    private void ParseToolFile(string toolFile, string? overrideArguments, List<ToolConfig> tools)
+    /// <returns>False if the file could not be parsed at all.</returns>
+    private bool ParseToolFile(string toolFile, string? overrideArguments, List<ToolConfig> tools)
     {
         YamlSequenceNode items;
         try
@@ -77,7 +94,7 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
             {
                 ui.Failure($"ReadYmls: <{toolFile}> - the file is empty");
                 logger.Error($"ReadYmls: {toolFile} is empty");
-                return;
+                return false;
             }
 
             var mapping = (YamlMappingNode)yaml.Documents[0].RootNode;
@@ -87,8 +104,11 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
         {
             ui.Failure($"ReadYmls: <{toolFile}> - {e.Message}");
             logger.Error(e, $"ReadYmls: failed to parse {toolFile}");
-            return;
+            return false;
         }
+
+        int toolsBefore = tools.Count;
+        int itemFailures = 0;
 
         foreach (YamlMappingNode item in items)
         {
@@ -112,8 +132,12 @@ internal sealed class YmlHelpers(PipelinePaths paths, IConsoleUi ui, ILogger<Yml
             {
                 ui.Failure($"ReadYmls: <{toolFile}> - {e.Message}");
                 logger.Error(e, $"ReadYmls: failed to parse {toolFile}");
+                itemFailures++;
             }
         }
+
+        // The file counts as failed only when nothing usable came out of it.
+        return tools.Count > toolsBefore || itemFailures == 0;
     }
 
     private static string Read(YamlMappingNode item, string key) =>

@@ -117,6 +117,21 @@ jobs:
           test -f publish/LICENSE
           test -f publish/README.md
 
+      # A RID publish runs its own restore. If the committed lock file did not already carry the
+      # win-x64 graph, that restore would append it and silently dirty a committed file, breaking
+      # the next locked-mode restore with NU1004. This is the guard for that.
+      - name: Lock files unchanged by publish
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- '**/packages.lock.json'; then
+            echo "::error::publish modified a committed packages.lock.json"
+            git diff -- '**/packages.lock.json'
+            exit 1
+          fi
+          echo "packages.lock.json unchanged by publish"
+
       - name: Upload artifact
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

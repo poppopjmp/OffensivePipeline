@@ -35,7 +35,7 @@ internal sealed class TemplateValidator(IConsoleUi ui, PipelinePaths paths, YmlH
         int total = report.Invalid.Count + report.ParseFailures;
         if (total == 0)
         {
-            ui.Success($"All {report.TemplateCount} templates are valid.");
+            ui.Success($"All {report.TemplateCount} templates are valid ({report.ToolCount} tools).");
         }
         else
         {
@@ -60,16 +60,19 @@ internal sealed class TemplateValidator(IConsoleUi ui, PipelinePaths paths, YmlH
         if (!Directory.Exists(paths.YmlsPath))
         {
             ui.Failure($"Validate: templates folder not found <{paths.YmlsPath}>");
-            return new ValidationReport(Valid: false, TemplateCount: 0, ParseFailures: 1, Invalid: []);
+            return new ValidationReport(
+                Valid: false, TemplateCount: 0, ToolCount: 0, ParseFailures: 1, Invalid: []);
         }
 
         int filesOnDisk = Directory
             .GetFiles(paths.YmlsPath, "*.yml", SearchOption.AllDirectories)
             .Length;
 
-        // ReadYmls reports its own parse failures and returns only the templates that loaded.
-        List<ToolConfig> tools = ymlHelpers.ReadYmls();
-        int parseFailures = filesOnDisk - tools.Count;
+        // ReadYmls reports its own parse failures and returns only the templates that loaded, and
+        // now tells us how many files actually failed. Deriving that by subtraction was wrong: a
+        // template legally declares a sequence of tools, so one file can yield several and the
+        // subtraction went negative, failing the CI gate on a perfectly valid template.
+        List<ToolConfig> tools = ymlHelpers.ReadYmls(out int parseFailures);
 
         IReadOnlyList<string> known = moduleFactory.KnownModules;
         List<InvalidTemplate> invalid = [];
@@ -83,7 +86,7 @@ internal sealed class TemplateValidator(IConsoleUi ui, PipelinePaths paths, YmlH
         }
 
         bool valid = invalid.Count == 0 && parseFailures == 0;
-        return new ValidationReport(valid, filesOnDisk, parseFailures, invalid);
+        return new ValidationReport(valid, filesOnDisk, tools.Count, parseFailures, invalid);
     }
 
     /// <summary>The rules that make a template usable, matched to what the runtime actually needs.</summary>

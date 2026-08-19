@@ -128,4 +128,67 @@ public class TemplateValidatorTests
 
         Assert.Equal(2, result);
     }
+
+    /// <summary>
+    /// A template legally declares a <em>sequence</em> of tools. parseFailures used to be derived
+    /// as (files - tools), so a valid two-tool template produced parseFailures = -1, valid = false
+    /// and exit 1, with an empty invalid array naming no problem at all.
+    /// </summary>
+    [Fact]
+    public void A_Template_Declaring_Two_Tools_Is_Valid_And_Counted_Correctly()
+    {
+        const string twoTools = """
+            tool:
+              - name: AlphaTool
+                description: First tool.
+                gitLink: https://github.com/example/alpha
+                solutionPath: Alpha/Alpha.sln
+                language: c#
+                plugins: RandomGuid
+                authUser:
+                authToken:
+                toolArguments:
+              - name: BetaTool
+                description: Second tool.
+                gitLink: https://github.com/example/beta
+                solutionPath: Beta/Beta.sln
+                language: c#
+                plugins: RandomGuid
+                authUser:
+                authToken:
+                toolArguments:
+            """;
+
+        using TempWorkspace workspace = WorkspaceWith(("Pair", twoTools));
+        var ui = new RecordingConsoleUi();
+        var validator = new TemplateValidator(
+            ui, workspace.Paths, TestFactory.Yml(workspace.Paths, ui), new StubModuleFactory());
+
+        Output.ValidationReport report = validator.Run();
+
+        Assert.True(report.Valid);
+        Assert.Equal(0, report.ParseFailures);
+        Assert.Equal(1, report.TemplateCount);   // one file
+        Assert.Equal(2, report.ToolCount);       // two tools in it
+        Assert.Empty(report.Invalid);
+    }
+
+    /// <summary>A genuinely unparseable file must still be counted, alongside a multi-tool one.</summary>
+    [Fact]
+    public void Parse_Failures_Are_Counted_Per_File_Not_Inferred_By_Subtraction()
+    {
+        using TempWorkspace workspace = WorkspaceWith(
+            ("Good", TestFactory.Template("Good")),
+            ("Broken", "tool:\n  - name: [unterminated"));
+
+        var ui = new RecordingConsoleUi();
+        var validator = new TemplateValidator(
+            ui, workspace.Paths, TestFactory.Yml(workspace.Paths, ui), new StubModuleFactory());
+
+        Output.ValidationReport report = validator.Run();
+
+        Assert.False(report.Valid);
+        Assert.Equal(1, report.ParseFailures);
+        Assert.Equal(1, report.ToolCount);
+    }
 }

@@ -114,7 +114,9 @@ with are all different. **Read the breaking changes before upgrading an existing
 - **Reproducible restore.** `RestorePackagesWithLockFile` is on, the resolved graph is committed
   as `packages.lock.json`, and CI restores in locked mode. A dependency can no longer change
   without the lock file changing in the same reviewed commit; a drift fails the build with
-  `NU1004`.
+  `NU1004`. The application project declares `RuntimeIdentifiers=win-x64` so the lock file carries
+  the `net10.0/win-x64` graph too - otherwise a RID publish would append it and dirty a committed
+  file - and CI asserts the lock files are unchanged after publishing.
 - **Dependency injection and a real composition root.** A plain `ServiceCollection` (no
   generic host) wires `IConsoleUi`, `ILogger<T>`, `PipelinePaths`, `PipelineOptions`,
   `IProcessRunner`, `IResourceDownloader` and `IGitClient`. Modules are resolved by keyed DI

@@ -35,6 +35,11 @@ dotnet restore OffensivePipeline.sln --force-evaluate
 
 A version change without the matching lock-file update fails CI with `NU1004`.
 
+The application project declares `<RuntimeIdentifiers>win-x64</RuntimeIdentifiers>` so the lock
+file already contains the `net10.0/win-x64` graph. Without it, `dotnet publish -r win-x64` would
+run its own restore, append that graph to the committed lock file and break the next locked-mode
+restore. CI asserts the lock files are unchanged after publishing.
+
 > Note: the **build/obfuscation pipeline itself runs on Windows** (it shells out to
 > `cmd.exe`, MSBuild Build Tools and the ConfuserEx CLI). The project compiles and the test
 > suite runs on any platform — CI builds and tests on both `windows-latest` and
