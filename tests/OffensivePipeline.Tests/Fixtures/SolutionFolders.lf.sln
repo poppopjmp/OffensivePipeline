@@ -1,0 +1,11 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{33333333-3333-3333-3333-333333333333}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gamma", "src\Gamma\Gamma.csproj", "{44444444-4444-4444-4444-444444444444}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Delta", "src\Delta\Delta.fsproj", "{55555555-5555-5555-5555-555555555555}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{66666666-6666-6666-6666-666666666666}"
+EndProject
+Global
+EndGlobal

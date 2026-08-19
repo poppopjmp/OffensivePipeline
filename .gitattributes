@@ -1,0 +1,18 @@
+# Normalise line endings so a Windows checkout and a Linux checkout compile the
+# same bytes. Without this, Git rewrites LF to CRLF on Windows and raw string
+# literals (such as the CLI's Examples help block) silently differ per platform.
+* text=auto eol=lf
+
+# Windows-only scripts that genuinely need CRLF.
+*.bat            text eol=crlf
+*.cmd            text eol=crlf
+*.ps1            text eol=crlf
+*.template       text eol=crlf
+
+# Binary assets Git must never touch.
+*.png            binary
+*.PNG            binary
+*.nupkg          binary
+*.zip            binary
+*.exe            binary
+*.dll            binary

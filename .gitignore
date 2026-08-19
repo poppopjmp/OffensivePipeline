@@ -6,6 +6,12 @@
 *.suo
 *.userprefs
 
+# Test output
+TestResults/
+
+# Machine-specific configuration overrides (see appsettings.json for the shipped defaults)
+**/appsettings.Local.json
+
 # Node artifact files
 node_modules/
 dist/

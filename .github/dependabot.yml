@@ -1,12 +1,37 @@
 version: 2
 updates:
+  # Versions live centrally in /Directory.Packages.props, but Dependabot still has to see each
+  # project file to know which packages are actually referenced - hence all three directories.
   - package-ecosystem: "nuget"
-    directory: "/"
+    directories:
+      - "/"
+      - "/OffensivePipeline"
+      - "/tests/OffensivePipeline.Tests"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
     commit-message:
       prefix: "deps"
+    # Do not open a pull request for a version published in the last week. A freshly published
+    # (possibly compromised) package should not reach a review queue within hours of release.
+    cooldown:
+      default-days: 7
+    groups:
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+      test-dependencies:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+      # Everything else, minor and patch only, so major bumps still arrive as individual pull
+      # requests that can be reviewed on their own.
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -14,3 +39,9 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"

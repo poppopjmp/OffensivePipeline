@@ -3,17 +3,24 @@
 ![](img/banner.PNG)
 
 [![build](https://github.com/poppopjmp/offensivepipeline/actions/workflows/build.yml/badge.svg)](https://github.com/poppopjmp/offensivepipeline/actions/workflows/build.yml)
-[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![codeql](https://github.com/poppopjmp/offensivepipeline/actions/workflows/codeql.yml/badge.svg)](https://github.com/poppopjmp/offensivepipeline/actions/workflows/codeql.yml)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Maintained](https://img.shields.io/badge/maintained-yes-brightgreen.svg)](https://github.com/poppopjmp/offensivepipeline/commits/main)
 
 **OffensivePipeline** allows you to download and build C# tools, applying certain modifications in order to improve their evasion for Red Team exercises.   
 A common use of OffensivePipeline is to download a tool from a Git repository, randomise certain values in the project, build it, obfuscate the resulting binary and generate a shellcode.
 
-> **Project status:** actively maintained again. The codebase now targets **.NET 8 (LTS)**,
-> all dependencies have been updated, and CI builds run on every push. Maintained by
+> **Project status:** actively maintained. The codebase targets **.NET 10 (LTS)**, has a test
+> suite, and CI builds and tests on Windows and Linux on every push. Maintained by
 > [@poppopjmp](https://github.com/poppopjmp) (van1sh), continuing the original work of
 > [@aetsu](https://github.com/aetsu). See [CHANGELOG.md](CHANGELOG.md) for details.
+>
+> **Upgrading from 2.x?** Version 3.0.0 has breaking changes: it needs the **.NET 10 runtime**,
+> configuration moved from `OffensivePipeline.dll.config` to
+> [`appsettings.json`](#configuration), and the tool now returns
+> [non-zero exit codes](#exit-codes) and correctly reports build failures that earlier versions
+> silently swallowed.
 
 ## Features
 
@@ -28,6 +35,29 @@ A common use of OffensivePipeline is to download a tool from a Git repository, r
 - There are 79 tools parameterised in YML templates (not all of them may work :D)
 - New tools can be added using YML templates
 - It should be easy to add new plugins...
+
+## What's new in version 3.0
+
+- Targets **.NET 10 (LTS)**, supported until November 2028 — the release now requires the
+  .NET 10 runtime, or you can use the new **self-contained** zip, which bundles it
+- Configuration moved from `OffensivePipeline.dll.config` to **`appsettings.json`**; the old
+  file still works for this release only, with a deprecation warning ([migration](#migrating-from-offensivepipelinedllconfig))
+- **Build and obfuscation failures are finally reported as failures.** Previous versions
+  ignored MSBuild's, ConfuserEx's and Donut's return codes and printed `[+] No errors!`
+  regardless
+- **Real exit codes**, so `OffensivePipeline.exe all && next-step` now behaves ([table](#exit-codes))
+- Runtime downloads can be **SHA-256 verified**: the ConfuserEx CLI ships with its hash pinned,
+  and `nuget.exe` warns that it is unverified until you pin `NugetSha256` yourself
+- First **test suite** (offline and cross-platform, runs on Windows and Linux in CI), plus
+  CodeQL and dependency-review in CI
+- Command line migrated to `System.CommandLine`; same verbs, plus `--version` and `--verbose`
+- `t <tool>` is case-insensitive and no longer crashes on an unknown tool; `list` is sorted
+- New tool templates are picked up automatically — no more editing the csproj
+- New `validate` verb checks every template (fields, git link, plugins) without building, so a
+  broken template is caught up front instead of mid-run; a malformed template no longer aborts
+  the whole tool
+- `list` and `validate` accept `--json` for machine-readable output (clean stdout, secrets
+  omitted), so the tool drops into scripts and CI
 
 ## What's new in version 2.1
 
@@ -67,11 +97,82 @@ OffensivePipeline.exe all
 OffensivePipeline.exe t toolName
 ```
 
-- Clean cloned and build tools
+  The tool name is matched case-insensitively against the file names in `Tools/`, so
+  `t seatbelt` and `t Seatbelt` both resolve `Seatbelt.yml`.
+
+- Build a tool, overriding the shellcode arguments from the template
 
 ```
-OffensivePipeline.exe 
+OffensivePipeline.exe t rubeus -a "-c All,GPOLocalGroup -d whatever.local"
+OffensivePipeline.exe t rubeus --args "-c All,GPOLocalGroup -d whatever.local"
 ```
+
+  `-a`/`--args` replaces the `toolArguments` value in the tool's YAML template. The arguments
+  are embedded in the Donut shellcode.
+
+- Clean cloned and built tools
+
+```
+OffensivePipeline.exe clean
+```
+
+  Removes the `Git/` and `Output/` working directories and deletes `log.txt`, then recreates the
+  empty working directories.
+
+- Validate every tool template without cloning or building anything
+
+```
+OffensivePipeline.exe validate
+```
+
+  Checks that each `Tools/*.yml` template parses and describes a usable tool (required fields
+  present, a valid git link, a `.sln` solution path, and only known plugins). Exits non-zero if
+  any template is invalid, so it works as a pre-flight check or a CI gate. Runs on any platform.
+
+- Emit machine-readable JSON for scripting or CI
+
+```
+OffensivePipeline.exe list --json
+OffensivePipeline.exe validate --json
+```
+
+  `--json` (on `list` and `validate`) writes a JSON document to stdout and nothing else — the
+  banner is suppressed and any warnings go to stderr — so the output pipes straight into `jq` or
+  a pipeline step. `list --json` never includes `authUser`/`authToken`. `validate --json` returns
+  `{ "valid": bool, "templateCount": n, "parseFailures": n, "invalid": [{ "name", "problems" }] }`
+  and still exits non-zero when a template is invalid.
+
+- Echo diagnostics to the console as well as to `log.txt`
+
+```
+OffensivePipeline.exe --verbose all
+```
+
+  The `OFFENSIVEPIPELINE_VERBOSE` environment variable does the same thing.
+
+- Show help or the version
+
+```
+OffensivePipeline.exe --help
+OffensivePipeline.exe --version
+```
+
+### Exit codes
+
+| Invocation | Exit code |
+| --- | --- |
+| no arguments, `-?` / `-h` / `--help`, `--version` | 0 |
+| `list`, `clean` | 0 |
+| `validate` — every template valid | 0 |
+| `validate` — any template invalid | 1 |
+| `all` / `t <tool>` — everything succeeded | 0 |
+| `all` / `t <tool>` — any tool or module failed | 1 |
+| `t` with no tool name, unknown tool, unknown verb | 1 |
+| any unhandled error | 1 |
+
+> **Upgrading from 2.x:** every one of the non-zero rows used to be 0 (or an abrupt exit 134
+> with a stack trace). Scripts that chained on success may start failing where they silently
+> continued before.
 
 ### Output example
 
@@ -91,7 +192,7 @@ PS C:\OffensivePipeline> .\OffensivePipeline.exe t rubeus
                                                                                     ooo
 
                                                                     @aetsu
-                                                                                v2.0.0
+                                                                                v3.0.0
 
 
 [+] Loading tool: Rubeus
@@ -135,7 +236,7 @@ PS C:\OffensivePipeline> .\OffensivePipeline.exe t rubeus
 
     [+] Load BuildCsharp module
         [+] Checking requirements...
-        [*] Downloading nuget.exe from https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+        [*] Downloading nuget.exe from https://dist.nuget.org/win-x86-commandline/v6.14.0/nuget.exe
                 [+] Download OK - nuget.exe
                 [+] Path found - C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat
         Solving dependences with nuget...
@@ -188,7 +289,7 @@ B64 Payload: C:\OffensivePipeline\Output\Rubeus_vh00nc50xud\ConfuserEx\Donut\Rub
 - **RandomAssemblyInfo**: randomise the values defined in *AssemblyInfo.cs*
 - **BuildCsharp**: build c# project
 - **ConfuserEx**: obfuscate c# tools
-- **Donut**: use Donut to generate shellcodes. The shellcode generated is without parameters, in future releases this may be changed.
+- **Donut**: use Donut to generate shellcodes. Arguments to embed in the shellcode come from the template's `toolArguments` field, or from `-a`/`--args` on the command line, which overrides it.
 
 ## Add a tool from a remote git
 
@@ -277,47 +378,165 @@ Where:
 
 ## Requirements for the release version (Visual Studio 2019/2022 is not required)
 
+- **.NET 10 Runtime**: [https://dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
+    - Not needed if you use the `...-win-x64-self-contained.zip` release archive, which bundles
+      the runtime. It is larger, but runs on a host with no .NET installed at all.
 - Microsoft .NET Framework 3.5 Service Pack 1 (for some tools): [https://www.microsoft.com/en-us/download/details.aspx?id=22](https://www.microsoft.com/en-us/download/details.aspx?id=22)
 - Build Tools for Visual Studio 2022: [https://aka.ms/vs/17/release/vs_BuildTools.exe](https://aka.ms/vs/17/release/vs_BuildTools.exe)
     - Install .NET desktop build tools
     ![](img/2023-01-15-18-17-14.png)
 - (Alternative) Build Tools for Visual Studio 2019: [https://aka.ms/vs/16/release/vs_BuildTools.exe](https://aka.ms/vs/16/release/vs_BuildTools.exe)
 - Disable the antivirus :D
-- Tested on Windows 10 Pro - Version 20H2 - Build 19045.2486
+- CI builds and tests every push on `windows-latest` and `ubuntu-latest`. The download/build/obfuscate pipeline is exercised manually on Windows 10/11; the code and test suite run on any .NET 10 platform.
 
-In the **OffensivePipeline.dll.config** file it's possible to change the version of the build tools used.
+## Configuration
+
+Settings live in **`appsettings.json`**, next to `OffensivePipeline.exe`, under the
+`OffensivePipeline` section:
+
+```json
+{
+  "OffensivePipeline": {
+    "NugetUrl": "https://dist.nuget.org/win-x86-commandline/v6.14.0/nuget.exe",
+    "NugetSha256": "",
+    "BuildCsharpOptions": "/p:LangVersion=latest /p:Platform=\"Any CPU\" /p:Configuration=Release /p:AllowUnsafeBlocks=true",
+    "BuildCSharpTools": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\VsDevCmd.bat",
+    "ConfuserExUrl": "https://github.com/mkaring/ConfuserEx/releases/download/v1.6.0/ConfuserEx-CLI.zip",
+    "ConfuserExSha256": "a00de7cddc740f7edb1baab4c6c9073553dcc88f7e873d15b7fd34ddd33753d7"
+  }
+}
+```
+
+| Setting | Meaning |
+| --- | --- |
+| `NugetUrl` | Where `nuget.exe` is downloaded from when it is not already in `Resources/`. |
+| `NugetSha256` | Expected SHA-256 of that download. Empty means *do not verify* (a warning is printed). |
+| `BuildCsharpOptions` | MSBuild switches appended to the generated `buildSolution.bat`. |
+| `BuildCSharpTools` | Path to `VsDevCmd.bat` from your Build Tools installation. |
+| `ConfuserExUrl` | Where the ConfuserEx CLI archive is downloaded from. |
+| `ConfuserExSha256` | Expected SHA-256 of that archive. Empty means *do not verify*. |
+
+To switch build tools versions, change `BuildCSharpTools`:
 
 - Build Tools 2019:
 
-```xml
-<add key="BuildCSharpTools" value="C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\Tools\VsDevCmd.bat"/>
-``` 		
+```json
+"BuildCSharpTools": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\Common7\\Tools\\VsDevCmd.bat"
+```
 
 - Build Tools 2022:
 
-```xml
-<add key="BuildCSharpTools" value="C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat"/>
+```json
+"BuildCSharpTools": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\VsDevCmd.bat"
 ```
+
+Sources are layered, lowest precedence first: the shipped `appsettings.json` defaults, then the
+deprecated `OffensivePipeline.dll.config`, then an optional `appsettings.Local.json` in the same
+folder. Put machine-specific values in `appsettings.Local.json` so an upgrade does not overwrite
+them — that file is gitignored and never shipped.
+
+The legacy file deliberately outranks `appsettings.json`: it only exists if you edited it, and
+`appsettings.json` ships with every key populated, so the other order would silently discard
+your customisation on upgrade. It is still deprecated and stops being read in v3.1.0.
+
+### Verified downloads
+
+`nuget.exe` and the ConfuserEx CLI are fetched over HTTPS at run time and then executed, so
+both are checked against a pinned SHA-256 before use. A file that fails the check is deleted
+and the module fails.
+
+If you deliberately point `ConfuserExUrl` (or `NugetUrl`) somewhere else, update the matching
+hash, or the download will be rejected:
+
+```powershell
+# Download once, hash it, paste the value into appsettings.json
+(Get-FileHash -Algorithm SHA256 .\ConfuserEx-CLI.zip).Hash.ToLower()
+```
+
+Leaving a hash empty disables verification for that download and prints a warning on every
+run. `NugetSha256` ships empty because the pinned `nuget.exe` build has not been recorded
+here yet — set it for your environment if you want that download pinned too.
+
+### Migrating from `OffensivePipeline.dll.config`
+
+Versions up to 2.1 kept these settings in `OffensivePipeline.dll.config`. The key names are
+unchanged, so migration is a copy across:
+
+| Old — `OffensivePipeline.dll.config` | New — `appsettings.json` |
+| --- | --- |
+| `<add key="BuildCSharpTools" value="C:\...\VsDevCmd.bat"/>` | `"BuildCSharpTools": "C:\\...\\VsDevCmd.bat"` |
+| `<add key="BuildCsharpOptions" value="/p:..."/>` | `"BuildCsharpOptions": "/p:..."` |
+| `<add key="NugetUrl" value="https://..."/>` | `"NugetUrl": "https://..."` |
+| `<add key="ConfuserExUrl" value="https://..."/>` | `"ConfuserExUrl": "https://..."` |
+| `<add key="Version" value="2.0.0"/>` | *removed* — the banner reads the assembly's own version |
+
+Note the JSON escaping: backslashes in Windows paths must be doubled, and quotes inside
+`BuildCsharpOptions` must be escaped as `\"`.
+
+**The old file still works in 3.0.0**, at the lowest precedence, and the tool prints:
+
+```
+[!] OffensivePipeline.dll.config is deprecated and will be ignored from v2.3.0; migrate to appsettings.json
+```
+
+followed by a line for every legacy key whose value `appsettings.json` is overriding. (The
+message names `v2.3.0`, the version number this removal was scheduled under before the 3.0
+renumbering; it means **the next feature release**.) Migrate now and delete the file.
 
 ## Requirements for build
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) — the exact version is
+  pinned by `global.json`
 - Net framework 3.5.1 (for some target tools): https://www.microsoft.com/en-us/download/details.aspx?id=22
 - (Optional) Visual Studio 2022 -> https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=17
     - Install .NET desktop build tools
 
-The bundled Donut NuGet package (`DonutCore.1.0.1.nupkg`, thanks to @n1xbyte) is now
-resolved automatically from `ExternalResources/` via the repository's `nuget.config` —
-no manual NuGet feed configuration is required.
+The bundled Donut NuGet package (`DonutCore.1.0.1.nupkg`, thanks to @n1xbyte) resolves
+automatically from `ExternalResources/` via the repository's `nuget.config` — no manual NuGet
+feed configuration is required. See
+[`ExternalResources/README.md`](ExternalResources/README.md) for its provenance and checksum.
 
-Build from the command line:
+Build and test from the command line:
 
 ```bash
 dotnet build OffensivePipeline.sln -c Release
+dotnet test --solution OffensivePipeline.sln -c Release
+```
+
+Both work on Windows, Linux and macOS, and CI runs them on Windows and Linux. The test suite
+needs no network access and no Windows.
+
+Produce a release-shaped build:
+
+```bash
+dotnet publish OffensivePipeline/OffensivePipeline.csproj -c Release -r win-x64 --self-contained false -o publish
 ```
 
 > Note: building/obfuscating the downloaded tools is performed on **Windows** (the
-> pipeline shells out to `cmd.exe`, MSBuild Build Tools and the ConfuserEx CLI).
+> pipeline shells out to `cmd.exe`, MSBuild Build Tools and the ConfuserEx CLI). The project
+> itself compiles and its `list`, `clean` and `--help` verbs run anywhere.
+
+## Verifying releases
+
+Every release ships `SHA256SUMS.txt` and a build-provenance attestation.
+
+```bash
+# Checksums (run in the folder containing the zips and SHA256SUMS.txt)
+sha256sum -c SHA256SUMS.txt
+
+# Provenance: proves the zip was built by this repository's release workflow
+gh attestation verify OffensivePipeline-v3.0.0-win-x64.zip --repo poppopjmp/offensivepipeline
+```
+
+Two archives are published per tag:
+
+| Archive | Contents |
+| --- | --- |
+| `OffensivePipeline-<tag>-win-x64.zip` | Framework-dependent. Needs the .NET 10 runtime. |
+| `OffensivePipeline-<tag>-win-x64-self-contained.zip` | Bundles the runtime. For hosts with no .NET installed. |
+
+Both contain all 79 tool templates under `Tools/`, the `Resources/` templates,
+`appsettings.json`, `README.md` and `LICENSE`.
 
 ## Maintainers
 
@@ -331,7 +550,7 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 - ConfuserEx project: [https://github.com/mkaring/ConfuserEx](https://github.com/mkaring/ConfuserEx)
 - Donut project: [https://github.com/TheWover/donut](https://github.com/TheWover/donut)
 - Donut C# generator: [https://github.com/n1xbyte/donutCS](https://github.com/n1xbyte/donutCS)
-- SharpCollection: [https://github.com/Flangvik/SharpCollection](SharpCollection)
+- SharpCollection: [https://github.com/Flangvik/SharpCollection](https://github.com/Flangvik/SharpCollection)
 
 ## Supported tools
 
@@ -395,7 +614,7 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Seatbelt**:  
   - Description: Seatbelt is a C# project that performs a number of security oriented host-survey "safety checks" relevant from both offensive and defensive security perspectives.  
   - Link: [https://github.com/GhostPack/Seatbelt](https://github.com/GhostPack/Seatbelt) 
-- Sharp-**SMBExec**:  
+- **Sharp-SMBExec**:  
   - Description: A native C# conversion of Kevin Robertsons Invoke-SMBExec powershell script  
   - Link: [https://github.com/checkymander/Sharp-SMBExec](https://github.com/checkymander/Sharp-SMBExec) 
 - **SharpAppLocker**:  

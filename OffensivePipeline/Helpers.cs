@@ -1,224 +1,119 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO.Compression;
-using System.Linq;
-using System.Net.Http;
 using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace OffensivePipeline
+namespace OffensivePipeline;
+
+/// <summary>
+/// Filesystem and hashing utilities.
+/// </summary>
+/// <remarks>
+/// Deliberately free of console and logging concerns: the methods here report failure through their
+/// return value or by throwing, and the caller - which has an <c>IConsoleUi</c> and an
+/// <c>ILogger</c> injected - decides how to present it. Downloading and shelling out used to live
+/// here too; they are now <c>IResourceDownloader</c> and <c>IProcessRunner</c>.
+/// </remarks>
+internal static class Helpers
 {
-    internal class Helpers
+    public static string GetRandomString() => Path.GetRandomFileName().Replace(".", string.Empty, StringComparison.Ordinal);
+
+    /// <summary>Hex SHA-256 of a file's contents.</summary>
+    public static string ComputeSha256File(string path)
     {
-        private static readonly HttpClient httpClient = new HttpClient();
+        using FileStream stream = File.OpenRead(path);
+        return Convert.ToHexStringLower(SHA256.HashData(stream));
+    }
 
-        public static string GetRandomString()
+    /// <summary>Extracts an archive.</summary>
+    /// <exception cref="InvalidDataException">The archive is corrupt.</exception>
+    /// <exception cref="IOException">The archive could not be read or written.</exception>
+    public static void UnzipFile(string filePath, string outputFolder) =>
+        ZipFile.ExtractToDirectory(filePath, outputFolder);
+
+    /// <summary>Writes a <c>sha256.txt</c> manifest covering every file under <paramref name="folder"/>.</summary>
+    public static void CalculateSha256Files(string folder)
+    {
+        string[] fileList = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
+        List<string> hashes = [];
+        foreach (string filename in fileList)
         {
-            string path = Path.GetRandomFileName();
-            path = path.Replace(".", ""); // Remove period.
-            return path;
+            hashes.Add($"{filename} - {ComputeSha256File(filename)}");
         }
 
-        public static bool DownloadResources(string url, string outputName, string outputPath)
+        File.WriteAllLines(Path.Combine(folder, "sha256.txt"), hashes);
+    }
+
+    /// <summary>
+    /// Recursively deletes a directory as well as any subdirectories and files. If the files are read-only, they are flagged as normal and then deleted.
+    /// </summary>
+    /// <param name="directory">The name of the directory to remove.</param>
+    public static void DeleteReadOnlyDirectory(string directory)
+    {
+        foreach (string subdirectory in Directory.EnumerateDirectories(directory))
         {
-            bool status = true;
-            try
-            {
-                string f = Path.Combine(Directory.GetCurrentDirectory(), outputPath, outputName);
-                using (var response = httpClient.GetAsync(url).GetAwaiter().GetResult())
-                {
-                    response.EnsureSuccessStatusCode();
-                    using var fs = new FileStream(f, FileMode.Create, FileAccess.Write, FileShare.None);
-                    response.Content.CopyToAsync(fs).GetAwaiter().GetResult();
-                }
-                if (!File.Exists(f))
-                {
-                    LogHelpers.PrintError($"DownloadResources: File not found <{f}>");
-                    LogHelpers.LogToFile("DownloadResources", "ERROR", $"File not found <{f}>");
-                    status = false;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogHelpers.PrintError($"DownloadResources: <{url}> - {ex}");
-                LogHelpers.LogToFile("DownloadResources", "ERROR", $"{url} - {ex}");
-                status = false;
-            }
-            return status;
+            DeleteReadOnlyDirectory(subdirectory);
         }
 
-        public static bool UnzipFile(string filePath, string outputFolder)
+        foreach (string fileName in Directory.EnumerateFiles(directory))
         {
-            bool status = true;
-            try
-            {
-                ZipFile.ExtractToDirectory(filePath, outputFolder);
-
-            }
-            catch (Exception ex)
-            {
-                string message = $"UnzipFile: <{filePath}> - {ex}";
-                LogHelpers.PrintError(message);
-                LogHelpers.LogToFile("UnzipFile", "ERROR", message);
-                status = false;
-            }
-            return status;
+            var fileInfo = new FileInfo(fileName) { Attributes = FileAttributes.Normal };
+            fileInfo.Delete();
         }
 
+        Directory.Delete(directory);
+    }
 
-        static string CalculateMD5(string filename)
+    /// <summary>
+    /// Copies a directory tree, continuing past a failed subtree so the caller learns about every
+    /// problem rather than only the first.
+    /// </summary>
+    /// <param name="errors">Collects a description of each failure; the caller reports them.</param>
+    /// <returns>False if any file or subdirectory could not be copied.</returns>
+    public static bool CopyDirectory(
+        string sourceDir, string destinationDir, bool recursive, ICollection<string> errors)
+    {
+        bool status = true;
+
+        var dir = new DirectoryInfo(sourceDir);
+        if (!dir.Exists)
         {
-            using (var md5 = MD5.Create())
+            errors.Add($"Source directory not found: {dir.FullName}");
+            return false;
+        }
+
+        try
+        {
+            DirectoryInfo[] dirs = dir.GetDirectories();
+            Directory.CreateDirectory(destinationDir);
+
+            foreach (FileInfo file in dir.GetFiles())
             {
-                using (var stream = File.OpenRead(filename))
+                string targetFilePath = Path.Combine(destinationDir, file.Name);
+                file.CopyTo(targetFilePath);
+            }
+
+            if (recursive)
+            {
+                foreach (DirectoryInfo subDir in dirs)
                 {
-                    var hash = md5.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
+                    status &= CopyDirectory(subDir.FullName, newDestinationDir, true, errors);
                 }
             }
         }
-
-        public static void CalculateMD5Files(string folder)
+        catch (Exception e)
         {
-            string[] fileList = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
-            List<string> md5List = new List<string>();
-            foreach (string filename in fileList)
-            {
-                using (var md5 = MD5.Create())
-                {
-                    using (var stream = File.OpenRead(filename))
-                    {
-                        var hash = md5.ComputeHash(stream);
-                        md5List.Add(filename + " - " + BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant());
-                    }
-                }
-            }
-            File.WriteAllLines(Path.Combine(new string[] { folder, "md5.txt" }), md5List);
+            errors.Add(e.ToString());
+            status = false;
         }
 
-        public static void CalculateSha256Files(string folder)
+        return status;
+    }
+
+    public static void CheckFolder(string folderPath)
+    {
+        if (!Directory.Exists(folderPath))
         {
-            string[] fileList = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
-            List<string> sha256l = new List<string>();
-            foreach (string filename in fileList)
-            {
-                using (var sha256 = SHA256.Create())
-                {
-                    using (var stream = File.OpenRead(filename))
-                    {
-                        var hash = sha256.ComputeHash(stream);
-                        sha256l.Add(filename + " - " + BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant());
-                    }
-                }
-            }
-            File.WriteAllLines(Path.Combine(new string[] { folder, "sha256.txt" }), sha256l);
-        }
-
-        /// <summary>
-        /// Recursively deletes a directory as well as any subdirectories and files. If the files are read-only, they are flagged as normal and then deleted.
-        /// </summary>
-        /// <param name="directory">The name of the directory to remove.</param>
-        public static void DeleteReadOnlyDirectory(string directory)
-        {
-            foreach (var subdirectory in Directory.EnumerateDirectories(directory))
-            {
-                DeleteReadOnlyDirectory(subdirectory);
-            }
-            foreach (var fileName in Directory.EnumerateFiles(directory))
-            {
-                var fileInfo = new FileInfo(fileName);
-                fileInfo.Attributes = FileAttributes.Normal;
-                fileInfo.Delete();
-            }
-            Directory.Delete(directory);
-        }
-
-        public static bool ExecuteCommand(string command)
-        {
-            bool status = true;
-            try
-            {
-                ProcessStartInfo processInfo;
-                Process process;
-                processInfo = new ProcessStartInfo("cmd.exe", "/c " + command);
-                processInfo.CreateNoWindow = true;
-                processInfo.UseShellExecute = false;
-                processInfo.RedirectStandardError = true;
-                processInfo.RedirectStandardOutput = true;
-                process = Process.Start(processInfo);
-                string output = process.StandardOutput.ReadToEnd();
-                string error = process.StandardError.ReadToEnd();
-                int exitCode = process.ExitCode;
-                if (!String.IsNullOrEmpty(output))
-                {
-                    LogHelpers.LogToFile("ExecuteCommand", "INFO", output);
-                }
-                if (!String.IsNullOrEmpty(error))
-                {
-                    LogHelpers.LogToFile("ExecuteCommand", "ERROR", error);
-                }
-                process.Close();
-            }
-            catch (Exception ex)
-            {
-                LogHelpers.PrintError($"ExecuteCommand: <{ command}> - {ex.ToString()}");
-                LogHelpers.LogToFile("ExecuteCommand", "ERROR", $"{command} - {ex.ToString()}");
-                status = false;
-            }
-
-            return status;
-        }
-
-        public static bool CopyDirectory(string sourceDir, string destinationDir, bool recursive)
-        {
-            bool status = true;
-            // Get information about the source directory
-            var dir = new DirectoryInfo(sourceDir);
-
-            // Check if the source directory exists
-            if (!dir.Exists)
-            {
-                LogHelpers.PrintError($"CopyDirectory: Source directory not found: {dir.FullName}");
-                LogHelpers.LogToFile("CopyDirectory", "ERROR", $"Source directory not found: {dir.FullName}");
-                return false;
-            }
-            try
-            {
-                DirectoryInfo[] dirs = dir.GetDirectories();
-                Directory.CreateDirectory(destinationDir);
-
-                foreach (FileInfo file in dir.GetFiles())
-                {
-                    string targetFilePath = Path.Combine(destinationDir, file.Name);
-                    file.CopyTo(targetFilePath);
-                }
-                if (recursive)
-                {
-                    foreach (DirectoryInfo subDir in dirs)
-                    {
-                        string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
-                        CopyDirectory(subDir.FullName, newDestinationDir, true);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                LogHelpers.PrintError($"CopyDirectory: {e}");
-                LogHelpers.LogToFile("CopyDirectory", "ERROR", $"{e}");
-
-            }
-
-            return status;
-        }
-
-        public static void CheckFolder(string folderPath)
-        {
-            bool exists = Directory.Exists(folderPath);
-
-            if (!exists)
-                Directory.CreateDirectory(folderPath);
+            Directory.CreateDirectory(folderPath);
         }
     }
 }

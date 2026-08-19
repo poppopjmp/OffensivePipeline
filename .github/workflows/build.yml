@@ -7,33 +7,134 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Least privilege: this workflow only ever reads the repository. Nothing here needs a write
+# scope, and the release workflow is where the one job that does live.
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
 jobs:
   build:
-    runs-on: windows-latest
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    # The pipeline itself is Windows-only at run time (it shells out to cmd.exe, the Visual Studio
+    # Build Tools and the ConfuserEx CLI), so Windows stays the primary leg and is the only one
+    # that produces an artifact. Linux is built and tested as well because README and
+    # CONTRIBUTING both promise the project compiles anywhere, and nothing enforced that before.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, ubuntu-latest ]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: '8.0.x'
+          persist-credentials: false
 
+      # global.json is the single source of SDK truth, so the version is never pinned twice.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      # The committed packages.lock.json files pin the exact restore graph, so they are the precise
+      # cache key: the same lock file always restores the same packages.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'nuget.config', 'global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Locked mode fails the restore if the lock file and the central package versions have
+      # drifted apart, so a dependency can never change without the lock file changing in the
+      # same commit and being reviewed.
       - name: Restore
-        run: dotnet restore OffensivePipeline.sln
+        run: dotnet restore OffensivePipeline.sln --locked-mode
 
       - name: Build
         run: dotnet build OffensivePipeline.sln -c Release --no-restore
 
+      # 'dotnet test' needs --solution for a solution argument under the SDK 10 test runner that
+      # global.json selects.
+      - name: Test
+        run: dotnet test --solution OffensivePipeline.sln -c Release --no-build
+
+      # Guards the project's hard constraints on both platforms: all tool templates load, the
+      # banner credit is intact, and all four verbs are still on the command line.
+      - name: Smoke test the CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=OffensivePipeline/bin/Release/net10.0/OffensivePipeline.dll
+
+          dotnet "$app" list > list.txt
+          listed=$(grep -cE '^\[[0-9]+/[0-9]+\]' list.txt || true)
+          expected=$(find OffensivePipeline/Tools -name '*.yml' | wc -l | tr -d '[:space:]')
+          echo "list printed $listed of $expected templates"
+          test "$listed" -eq "$expected"
+
+          grep -q '@aetsu' list.txt
+
+          dotnet "$app" --help > help.txt
+          verbs=$(grep -cE '^[[:space:]]+(list|all|t <tool>|clean|validate)[[:space:]]' help.txt || true)
+          echo "help lists $verbs verbs"
+          test "$verbs" -eq 5
+
+          # Every shipped template must pass validation on both platforms.
+          dotnet "$app" validate
+
       - name: Publish (win-x64)
+        if: matrix.os == 'windows-latest'
         run: dotnet publish OffensivePipeline/OffensivePipeline.csproj -c Release -r win-x64 --self-contained false -o publish
 
+      # The csproj copies templates and resources with a glob rather than a hand-maintained list.
+      # This step is what makes that glob trustworthy: a template that stops shipping fails CI.
+      - name: Verify published payload
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          published=$(find publish/Tools -name '*.yml' | wc -l | tr -d '[:space:]')
+          expected=$(find OffensivePipeline/Tools -name '*.yml' | wc -l | tr -d '[:space:]')
+          echo "published $published of $expected templates"
+          test "$published" -eq "$expected"
+
+          test -f publish/Resources/template_build.bat
+          test -f publish/Resources/template_confuserEx.crproj.template
+          test -f publish/appsettings.json
+          test -f publish/LICENSE
+          test -f publish/README.md
+
+      # A RID publish runs its own restore. If the committed lock file did not already carry the
+      # win-x64 graph, that restore would append it and silently dirty a committed file, breaking
+      # the next locked-mode restore with NU1004. This is the guard for that.
+      - name: Lock files unchanged by publish
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- '**/packages.lock.json'; then
+            echo "::error::publish modified a committed packages.lock.json"
+            git diff -- '**/packages.lock.json'
+            exit 1
+          fi
+          echo "packages.lock.json unchanged by publish"
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: OffensivePipeline-win-x64
           path: publish
